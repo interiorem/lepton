@@ -914,36 +914,39 @@ int app_main( int argc, char** argv )
     }
 
 
-    // (re)set program has to be done first
-    reset_buffers();
-
-    // process file(s) - this is the main function routine
     begin = clock();
-    if (file_cnt > 2 && action != lepton_concatenate) {
-        show_help();
-        custom_exit(ExitCode::FILE_NOT_FOUND);
-    }
-    if (action == forkserve) {
+
+    // process each input file
+    for (int i = 0; i < file_cnt; i++, file_no++)
+    {
+        // (re)set program has to be done first
+        reset_buffers();
+
+        if (action == forkserve) {
 #ifdef _WIN32
-        abort(); // not implemented
+            abort(); // not implemented
 #else
-        fork_serve();
+            fork_serve();
 #endif
-    } else if (action == socketserve) {
+        } else if (action == socketserve) {
 #ifdef _WIN32
-        abort(); // not implemented
+            abort(); // not implemented
 #else
-        socket_serve(&process_file, max_file_size, g_socketserve_info);
+            socket_serve(&process_file, max_file_size, g_socketserve_info);
 #endif
-    } else {
-        process_file(nullptr, nullptr, max_file_size, g_force_zlib0_out);
+        } else {
+            // process file(s) - this is the main function routine
+            process_file(nullptr, nullptr, max_file_size, g_force_zlib0_out);
+        }
+        if (errorlevel.load() >= err_tresh) error_cnt++;
+        if (errorlevel.load() == 1 ) warn_cnt++;
+        if ( errorlevel.load() < err_tresh ) {
+            acc_jpgsize += jpgfilesize;
+            acc_ujgsize += ujgfilesize;
+        }
     }
-    if (errorlevel.load() >= err_tresh) error_cnt++;
-    if (errorlevel.load() == 1 ) warn_cnt++;
-    if ( errorlevel.load() < err_tresh ) {
-        acc_jpgsize += jpgfilesize;
-        acc_ujgsize += ujgfilesize;
-    }
+    
+    
     if (!g_use_seccomp) {
         end = clock();
     }
@@ -1458,10 +1461,8 @@ int open_fdout(const char *ifilename,
     }
     int retval = -1;
     std::string ofilename;
-    // check file id, determine filetype
-    if (file_no + 1 < file_cnt && ofilename != ifilename) {
-        ofilename = filelist[file_no + 1];
-    } else if (is_jpeg_header(fileid) || is_embedded_jpeg || g_permissive) {
+    // check file id, determine filetype in order to build the outname
+    if (is_jpeg_header(fileid) || is_embedded_jpeg || g_permissive) {
         ofilename = postfix_uniq(ifilename, (ofiletype == UJG ? ".ujg" : ".lep"));
     } else if ( ( ( fileid[0] == ujg_header[0] ) && ( fileid[1] == ujg_header[1] ) )
                 || ( ( fileid[0] == lepton_header[0] ) && ( fileid[1] == lepton_header[1] ) )
@@ -1473,6 +1474,7 @@ int open_fdout(const char *ifilename,
             ofilename = postfix_uniq(ifilename, ".jpg");
         }
     }
+    
     do {
         retval = open(ofilename.c_str(), O_WRONLY|O_CREAT|O_TRUNC
 #ifdef _WIN32
@@ -2013,11 +2015,7 @@ void process_file(IOUtil::FileReader* reader,
     if ( ( verbosity > 1 ) && ( action == comp ) )
         fprintf( msgout,  "\n" );
     LeptonDebug::dumpDebugData();
-    if (errorlevel.load()) {
-        custom_exit(ExitCode::UNSUPPORTED_JPEG); // custom exit will delete generic_workers
-    } else {
-        custom_exit(ExitCode::SUCCESS);
-    }
+
     reset_buffers();
 }
 
