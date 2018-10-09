@@ -27,16 +27,30 @@ Using CMAKE:
 
     mkdir -p build
     cd build
-    cmake ..
+    cmake -DENABLE_ANS_EXPERIMENTAL=ON ..
     make -j8
 
 On Windows
 
     mkdir -p build
     cd build
-    "c:\Program Files\CMake\bin\cmake" ..
+    "c:\Program Files\CMake\bin\cmake" -DENABLE_ANS_EXPERIMENTAL=ON ..
     start .
     REM Double click the Visual Studio project
+
+
+## Usage (by bulat-z)
+
+SSE?: lepton 
+
+AVX2: lepton-avx (5-10% faster)
+
+ANS codec (1.33x slower encoding, 10% faster decoding): -ans
+
+encoding: lepton[-avx] [-ans] [-cache] [-nul] -unjailed -singlethread -skipvalidate  1.jpg 2.jpg ...
+
+decoding: lepton[-avx] [-cache] [-nul] -unjailed -singlethread -skipvalidate  1.lep 2.lep ...
+
 
 ## Usage
 
