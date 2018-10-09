@@ -101,6 +101,7 @@ const char** g_argv = NULL;
 #endif
 bool g_permissive = false;
 bool fast_exit = true;
+bool g_no_output_option = false;  // redirect output to null
 #ifdef SKIP_VALIDATION
 bool g_skip_validation = true;
 #else
@@ -1083,6 +1084,8 @@ int initialize_options( int argc, const char*const * argv )
             min_encode_threads = local_atoi((*argv) + strlen("-minencodethreads="));
         } else if ( strncmp((*argv), "-injectsyscall=", strlen("-injectsyscall=") ) == 0 ) {
             g_inject_syscall_test = strtol((*argv) + strlen("-injectsyscall="), NULL, 10);
+        } else if ( strcmp((*argv), "-nul") == 0 ) {
+            g_no_output_option = true;
         } else if ( strcmp((*argv), "-skipvalidation") == 0 ) {
             g_skip_validation = true;
         } else if ( strcmp((*argv), "-skipvalidate") == 0 ) {
@@ -1459,7 +1462,13 @@ int open_fdout(const char *ifilename,
     int retval = -1;
     std::string ofilename;
     // check file id, determine filetype in order to build the outname
-    if (is_jpeg_header(fileid) || is_embedded_jpeg || g_permissive) {
+    if (g_no_output_option) {
+        #ifdef _WIN32
+            ofilename = "nul";  // supress output
+        #else
+            ofilename = "/dev/null";  // supress output
+        #endif
+    } else if (is_jpeg_header(fileid) || is_embedded_jpeg || g_permissive) {
         ofilename = postfix_uniq(ifilename, (ofiletype == UJG ? ".ujg" : ".lep"));
     } else if ( ( ( fileid[0] == ujg_header[0] ) && ( fileid[1] == ujg_header[1] ) )
                 || ( ( fileid[0] == lepton_header[0] ) && ( fileid[1] == lepton_header[1] ) )
