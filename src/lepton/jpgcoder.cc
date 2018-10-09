@@ -2079,7 +2079,17 @@ void process_file(IOUtil::FileReader* reader,
         case 0:
           if ( errorlevel.load() < err_tresh ) {
                 if (action == comp ) {
-                    fprintf(stderr, "%d %d\n",(int)ujgfilesize, (int)jpgfilesize);
+                    fprintf(stdout, 
+                        (filetype == JPEG?  "STATS %.6lf %s %d %d %.6lf %.6lf %.6lf\n"
+                                         :  "STATS %.6lf %s %d %d %.6lf\n"),
+                        double(TimingHarness::timing[0][TimingHarness::TS_DONE] - TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED]) / 1e6,
+                        ifilename,
+                        (int)jpgfilesize, 
+                        (int)ujgfilesize,
+                        double(TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] - TimingHarness::timing[0][TimingHarness::TS_READ_STARTED]) / 1e6,
+                        double(TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_FINISHED] - TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED]) / 1e6,
+                        double(TimingHarness::timing[0][TimingHarness::TS_DONE] - TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_FINISHED]) / 1e6
+                        );
                     char percentage_report[]=" XX.XX%\n";
                     double pct = cr + .005;
                     percentage_report[0] = '0' + (int)(pct / 100) % 10;
