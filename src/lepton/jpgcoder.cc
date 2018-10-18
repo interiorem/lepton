@@ -102,6 +102,7 @@ const char** g_argv = NULL;
 bool g_permissive = false;
 bool fast_exit = true;
 bool g_no_output_option = false;  // redirect output to null
+bool g_cache_input_data = false;  // read entire input file into buffer before going to process the data
 #ifdef SKIP_VALIDATION
 bool g_skip_validation = true;
 #else
@@ -1086,6 +1087,8 @@ int initialize_options( int argc, const char*const * argv )
             g_inject_syscall_test = strtol((*argv) + strlen("-injectsyscall="), NULL, 10);
         } else if ( strcmp((*argv), "-nul") == 0 ) {
             g_no_output_option = true;
+        } else if ( strcmp((*argv), "-cache") == 0 ) {
+            g_cache_input_data = true;            
         } else if ( strcmp((*argv), "-skipvalidation") == 0 ) {
             g_skip_validation = true;
         } else if ( strcmp((*argv), "-skipvalidate") == 0 ) {
@@ -1525,6 +1528,115 @@ void prep_for_new_file() {
 
 void concatenate_files(int fdint, int fdout);
 
+// Memory-caching implementation of ibytestream API
+class caching_ibytestream
+{
+    std::vector<uint8_t>    input_data;     // buffer holding entire stream contents
+    size_t                  input_pos;      // current reading position in the input_data
+    size_t                  bytes_before;   // how many bytes were read from the base_stream prior 
+                                            // to creating caching_ibytestream on top of it
+public:
+    caching_ibytestream(ibytestream &base_stream)
+        : bytes_before(base_stream.getsize()),
+          input_pos(0)
+    {
+        // Read the entire input file into input_data[]
+        const size_t CHUNK_SIZE = 1024 * 1024;  // 1 MiB looks like a reasonable read chunk
+        size_t cursize = 0;
+        for(;;) {
+            input_data.resize(cursize + CHUNK_SIZE);
+            auto bytes = base_stream.read(input_data.data() + cursize, CHUNK_SIZE);
+            if (bytes <= 0)
+                break;
+            cursize += bytes;
+        }
+        input_data.resize(cursize);
+    }
+
+    // Read data into buffer and return amount of bytes read.
+    // It could be less than requested if we reached EOF.
+    unsigned int read(uint8_t *output, unsigned int size)
+    {
+        // reduce `size` if it requires reading past EOF
+        size = std::min(size_t(size), input_data.size() - input_pos);
+        memcpy(output, input_data.data() + input_pos, size);
+        input_pos += size;
+        return size;
+    }
+
+    // Read a single byte into *output and return true.
+    // Return false if we already reached EOF.
+    bool read_byte(uint8_t *output) {
+        if (input_pos < input_data.size()) {
+            *output = input_data[input_pos++];
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    // Last byte read from the stream
+    uint8_t get_last_read() const {
+        return input_pos > 0 ? input_data[input_pos - 1] : 0;
+    }
+
+    // Byte preceding to the last byte read from the stream
+    uint8_t get_penultimate_read() const {
+        return input_pos > 1 ? input_data[input_pos - 2] : 0;
+    }
+
+    unsigned int getsize() const {
+        // getsize() should return current read position in the entire file.
+        // This includes bytes read via caching_ibytestream::read*() so far
+        // plus bytes read from base_stream prior to creating 
+        // caching_ibytestream on top of it.
+        // bytes_before should be 2, since lepton reads first two bytes
+        // initially in order to determine the filetype (JPG/LEP/other)
+        // and choose the appropriate processing path.
+        return bytes_before + input_pos;
+    }
+};
+
+
+namespace Sirikata {
+// Memory-caching implementation of Sirikata::DecoderReader API
+class CachingDecoderReader : public DecoderReader
+{
+    std::vector<uint8_t>    input_data;     // buffer holding entire stream contents
+    size_t                  input_pos;      // current reading position in the input_data
+
+public:
+    CachingDecoderReader(DecoderReader *base_stream)
+        : input_pos(0)
+    {
+        // Read the entire input file into input_data[]
+        const size_t CHUNK_SIZE = 1024 * 1024;  // 1 MiB looks like a reasonable read chunk
+        size_t cursize = 0;
+        for(;;) {
+            input_data.resize(cursize + CHUNK_SIZE);
+            auto bytes = IOUtil::ReadFull(base_stream, input_data.data() + cursize, CHUNK_SIZE);
+            if (bytes <= 0)
+                break;
+            cursize += bytes;
+        }
+        input_data.resize(cursize);
+    }  
+
+    // Read data into buffer and return amount of bytes read.
+    // It could be less than requested if we reached EOF.
+    std::pair<uint32_t, JpegError> Read(uint8_t *data, unsigned int size) override
+    {
+        // reduce `size` if it requires reading past EOF
+        size = std::min(size_t(size), input_data.size() - input_pos);
+        memcpy(data, input_data.data() + input_pos, size);
+        input_pos += size;
+        return std::make_pair(uint32_t(size),
+                              size == 0 ? JpegError::errEOF() : JpegError::nil());
+    }
+};
+};
+
+
 void process_file(IOUtil::FileReader* reader,
                   IOUtil::FileWriter *writer,
                   int max_file_size,
@@ -1811,8 +1923,16 @@ void process_file(IOUtil::FileReader* reader,
                         ibytestream str_jpg_in(str_in,
                                                jpg_ident_offset,
                                                Sirikata::JpegAllocator<uint8_t>());
-
-                        execute(std::bind(&read_jpeg_wrapper, &huff_input_offset, &str_jpg_in, header, embedded_jpeg));
+                        
+                        if (g_cache_input_data) {
+                            // cache all data in memory before going to parse the JPEG
+                            caching_ibytestream caching_str_jpg_in(str_jpg_in);
+                            TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
+                            execute(std::bind(&read_jpeg<caching_ibytestream>, &huff_input_offset, &caching_str_jpg_in, header, embedded_jpeg));
+                        } else {
+                            execute(std::bind(&read_jpeg<ibytestream>, &huff_input_offset, &str_jpg_in, header, embedded_jpeg));
+                            TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
+                        }
                     } else {
                         ibytestreamcopier str_jpg_in(str_in,
                                                      jpg_ident_offset,
@@ -1824,9 +1944,9 @@ void process_file(IOUtil::FileReader* reader,
                                           &huff_input_offset, &str_jpg_in, header,
                                           embedded_jpeg));
                         jpeg_file_raw_bytes.swap(str_jpg_in.mutate_read_data());
-                    }
-                    TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_STARTED] =
                         TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
+                    }
+                    TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_STARTED] = TimingHarness::get_time_us();
                     std::vector<ThreadHandoff> luma_row_offsets;
                     execute(std::bind(&decode_jpeg, huff_input_offset, &luma_row_offsets));
                     TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_FINISHED]
@@ -1865,8 +1985,16 @@ void process_file(IOUtil::FileReader* reader,
                 timing_operation_start( 'd' );
                 TimingHarness::timing[0][TimingHarness::TS_READ_STARTED] = TimingHarness::get_time_us();
                 while (true) {
+
+                    if (g_cache_input_data) {
+                        // cache all data in memory before going to parse the JPEG
+                        str_in = new Sirikata::CachingDecoderReader(str_in);
+                        TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
+                    }
                     execute( read_ujpg ); // replace with decompression function!
-                    TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
+                    if (! g_cache_input_data)
+                        TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
+                        
                     if (!g_use_seccomp) {
                         read_done = clock();
                     }
