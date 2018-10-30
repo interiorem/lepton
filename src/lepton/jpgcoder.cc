@@ -264,7 +264,7 @@ bool write_ujpg(std::vector<ThreadHandoff> row_thread_handoffs,
                 std::vector<uint8_t, Sirikata::JpegAllocator<uint8_t> >*jpeg_file_raw_bytes);
 bool read_ujpg( void );
 unsigned char read_fixed_ujpg_header( void );
-bool reset_buffers( void );
+bool prepare_for_next_image( void );
 
 
 /* -----------------------------------------------
@@ -336,16 +336,15 @@ Sirikata::Array1d<Sirikata::Array1d<huffCodes, 4>, 2> hcodes; // huffman codes
 Sirikata::Array1d<Sirikata::Array1d<huffTree, 4>, 2> htrees; // huffman decoding trees
 Sirikata::Array1d<Sirikata::Array1d<unsigned char, 4>, 2> htset;// 1 if huffman table is set
 bool embedded_jpeg = false;
-unsigned char* grbgdata            =     NULL;    // garbage data
-unsigned char* hdrdata          =   NULL;   // header data
-unsigned char* huffdata         =   NULL;   // huffman coded data
-int            hufs             =    0  ;   // size of huffman data
 uint32_t       hdrs             =    0  ;   // size of header
-uint32_t       zlib_hdrs        =    0  ;   // size of compressed header
-size_t         total_framebuffer_allocated = 0; // framebuffer allocated
+unsigned char* hdrdata          =   NULL;   // header data
+int            hufs             =    0  ;   // size of huffman data
+unsigned char* huffdata         =   NULL;   // huffman coded data
 int            grbs             =    0  ;   // size of garbage
-int            prefix_grbs = 0; // size of prefix;
-unsigned char *prefix_grbgdata = NULL; // if prefix_grb is specified, header is not prepended
+unsigned char* grbgdata         =   NULL;   // garbage data
+int            prefix_grbs      =    0  ;   // size of prefix;
+unsigned char *prefix_grbgdata  =   NULL;   // if prefix_grb is specified, header is not prepended
+uint32_t       zlib_hdrs        =    0  ;   // size of compressed header
 
 std::vector<unsigned int>  rstp;   // restart markers positions in huffdata
 std::vector<unsigned int>  scnp;   // scan start positions in huffdata
@@ -776,7 +775,7 @@ int EMSCRIPTEN_KEEPALIVE main(void) {
 
 
     // (re)set program has to be done first
-    reset_buffers();
+    prepare_for_next_image();
 
     // process file(s) - this is the main function routine
     begin = clock();
@@ -922,7 +921,7 @@ int app_main( int argc, char** argv )
     for (int i = 0; i < file_cnt; i++, file_no++)
     {
         // (re)set program has to be done first
-        reset_buffers();
+        prepare_for_next_image();
 
         if (action == forkserve) {
 #ifdef _WIN32
@@ -947,8 +946,10 @@ int app_main( int argc, char** argv )
             acc_ujgsize += ujgfilesize;
         }
     }
-    
-    
+
+    prepare_for_next_image();  // free allocated global memory
+
+
     if (!g_use_seccomp) {
         end = clock();
     }
@@ -1508,24 +1509,6 @@ int open_fdout(const char *ifilename,
 }
 
 
-void prep_for_new_file() {
-    r_bitcount = 0;
-    if (prefix_grbgdata) {
-        aligned_dealloc(prefix_grbgdata);
-        prefix_grbgdata = NULL;
-    }
-    if (grbgdata && grbgdata != &EOI[0]) {
-        aligned_dealloc(grbgdata);
-        grbgdata = NULL;
-    }
-
-    prefix_grbs = 0;
-    reset_buffers();
-    auto cur_num_threads = read_fixed_ujpg_header();
-    always_assert(cur_num_threads <= NUM_THREADS); // this is an invariant we need to maintain
-    str_out->prep_for_new_file();
-}
-
 void concatenate_files(int fdint, int fdout);
 
 // Memory-caching implementation of ibytestream API
@@ -2021,7 +2004,13 @@ void process_file(IOUtil::FileReader* reader,
                     } else if (trailer_new_header[4] != header[0] ||  trailer_new_header[5] != header[1]) {
                         break;
                     } else {
-                        prep_for_new_file();
+                        // prepare for next image in the same lepton file:
+                        // we should read fixed header here because for the
+                        // first image it's also read before calling read_ujpg()
+                        prepare_for_next_image();
+                        r_bitcount = 0;
+                        execute(read_fixed_ujpg_header);
+                        str_out->prepare_for_next_image();
                     }
                 }
                 str_out->close();
@@ -2159,8 +2148,6 @@ void process_file(IOUtil::FileReader* reader,
     if ( ( verbosity > 1 ) && ( action == comp ) )
         fprintf( msgout,  "\n" );
     LeptonDebug::dumpDebugData();
-
-    reset_buffers();
 }
 
 
@@ -4489,11 +4476,10 @@ bool read_ujpg( void )
 }
 
 
-/* -----------------------------------------------
-    set each variable to its initial value
-    ----------------------------------------------- */
-
-bool reset_buffers( void )
+/* -----------------------------------------------------
+    Initialize engine before procesing each file (image)
+    ---------------------------------------------------- */
+bool prepare_for_next_image( void )
 {
     int cmp, bpos;
     int i;
@@ -4501,16 +4487,24 @@ bool reset_buffers( void )
 
     // -- free buffers --
 
-    // free buffers & set pointers NULL
-    if ( hdrdata  != NULL ) aligned_dealloc ( hdrdata );
-    if ( huffdata != NULL ) aligned_dealloc ( huffdata );
-    if ( grbgdata != NULL && grbgdata != EOI ) aligned_dealloc ( grbgdata );
+    // free buffers & set pointers to NULL
+    aligned_dealloc ( hdrdata );
+    aligned_dealloc ( huffdata );
+    aligned_dealloc ( prefix_grbgdata );
+    if ( grbgdata != EOI ) aligned_dealloc ( grbgdata );
+    hdrs             =    0  ;   // size of header
+    hdrdata          =   NULL;   // header data
+    hufs             =    0  ;   // size of huffman data
+    huffdata         =   NULL;   // huffman coded data
+    grbs             =    0  ;   // size of garbage
+    grbgdata         =   NULL;   // garbage data
+    prefix_grbs      =    0  ;   // size of prefix;
+    prefix_grbgdata  =   NULL;   // if prefix_grb is specified, header is not prepended
+    zlib_hdrs        =    0  ;   // size of compressed header
+
     rst_err.clear();
     rstp.resize(0);
     scnp.resize(0);
-    hdrdata   = NULL;
-    huffdata  = NULL;
-    grbgdata  = NULL;
 
     // free image arrays
     colldata.reset();

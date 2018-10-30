@@ -355,11 +355,7 @@ bounded_iostream::bounded_iostream(Sirikata::DecoderWriter *w,
     : parent(w), err(Sirikata::JpegError::nil()) {
     this->size_callback = size_callback;
     bookkeeping_bytes_written = 0;
-    buffer_position = 0;
-    byte_position = 0;
-    byte_bound = 0x7FFFFFFF;
-    num_bytes_attempted_to_write = 0;
-    set_bound(0);
+    prepare_for_next_image();
 }
 void bounded_iostream::call_size_callback(size_t size) {
     size_callback(parent, size);
@@ -367,13 +363,12 @@ void bounded_iostream::call_size_callback(size_t size) {
 bool bounded_iostream::chkerr() {
     return err != Sirikata::JpegError::nil();
 }
-void bounded_iostream::prep_for_new_file() {
+void bounded_iostream::prepare_for_next_image() {
     buffer_position = 0;
     byte_position = 0;
     byte_bound = 0x7FFFFFFF;;
     num_bytes_attempted_to_write = 0;
     set_bound(0);
-    
 }
 void bounded_iostream::set_bound(size_t bound) {
     flush();
