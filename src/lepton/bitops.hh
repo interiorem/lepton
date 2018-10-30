@@ -490,7 +490,7 @@ public:
                         std::min(byte_position + buffer_position, byte_bound));
     }
     void set_bound(size_t bound); // bound of zero = fine
-    void prep_for_new_file();
+    void prepare_for_next_image();
 
     size_t get_bound() const {
         return byte_bound;
