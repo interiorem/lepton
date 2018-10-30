@@ -4,7 +4,6 @@
 #include "aligned_block.hh"
 #include "block_context.hh"
 #include <map>
-extern bool g_allow_progressive;
 template<bool force_memory_optimization=false>
 class BlockBasedImageBase {
     typedef AlignedBlock Block;
