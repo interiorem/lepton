@@ -346,17 +346,17 @@ int            prefix_grbs      =    0  ;   // size of prefix;
 unsigned char *prefix_grbgdata  =   NULL;   // if prefix_grb is specified, header is not prepended
 uint32_t       zlib_hdrs        =    0  ;   // size of compressed header
 
-std::vector<unsigned int>  rstp;   // restart markers positions in huffdata
-std::vector<unsigned int>  scnp;   // scan start positions in huffdata
+std::vector<unsigned int>  rstp;            // restart markers positions in huffdata
+std::vector<unsigned int>  scnp;            // scan start positions in huffdata
 int            rstc             =    0  ;   // count of restart markers
 int            scnc             =    0  ;   // count of scans
 int            rsti             =    0  ;   // restart interval
 int8_t         padbit           =    -1 ;   // padbit (for huffman coding)
-std::vector<unsigned char> rst_err;   // number of wrong-set RST markers per scan
-std::vector<unsigned int> rst_cnt;
-bool rst_cnt_set = false;
+std::vector<unsigned char> rst_err;         // number of wrong-set RST markers per scan
+std::vector<unsigned int>  rst_cnt;
+bool           rst_cnt_set      =  false;
 int            max_file_size    =    0  ;   // support for truncated jpegs 0 means full jpeg
-size_t            start_byte       =    0;     // support for producing a slice of jpeg
+size_t         start_byte       =    0  ;   // support for producing a slice of jpeg
 size_t         jpeg_embedding_offset = 0;
 unsigned int min_encode_threads = 1;
 size_t max_encode_threads = 
@@ -384,7 +384,7 @@ int imgheight   = 0; // height of image
 int sfhm        = 0; // max horizontal sample factor
 int sfvm        = 0; // max verical sample factor
 int mcuv        = 0; // mcus per line
-unsigned int mcuh        = 0; // mcus per collumn
+unsigned int mcuh = 0; // mcus per column
 int mcuc        = 0; // count of mcus
 bool early_eof_encountered = false;
 
@@ -492,11 +492,11 @@ uint64_t g_time_bound_ms = 0;
 int g_inject_syscall_test = 0;
 bool g_force_zlib0_out = false;
 
-Sirikata::DecoderReader* str_in  = NULL;    // input stream
-bounded_iostream* str_out = NULL;    // output stream
+Sirikata::DecoderReader*    str_in      = NULL;    // input stream
+bounded_iostream*           str_out     = NULL;    // output stream
 // output stream
-IOUtil::FileWriter * ujg_out = NULL;
-IOUtil::FileReader * ujg_base_in = NULL;
+IOUtil::FileWriter*         ujg_out     = NULL;
+IOUtil::FileReader*         ujg_base_in = NULL;
 
 const char** filelist = NULL;        // list of files to process
 int    file_cnt = 0;        // count of files in list (1 for input only)
@@ -1279,7 +1279,6 @@ size_t decompression_memory_bound() {
     }
     size_t abit_writer = 0;
     if (g_allow_progressive) {
-
         if (zlib_hdrs * 3 < ABIT_WRITER_PRELOAD * 2 + 64) {
             if (zlib_hdrs * 3 < ABIT_WRITER_PRELOAD + 64) {
                 abit_writer += ABIT_WRITER_PRELOAD * 2 + 64;// these can't be reused memory
@@ -4481,10 +4480,6 @@ bool read_ujpg( void )
     ---------------------------------------------------- */
 bool prepare_for_next_image( void )
 {
-    int cmp, bpos;
-    int i;
-
-
     // -- free buffers --
 
     // free buffers & set pointers to NULL
@@ -4513,7 +4508,7 @@ bool prepare_for_next_image( void )
     // -- set variables --
 
     // preset componentinfo
-    for ( cmp = 0; cmp < 4; cmp++ ) {
+    for ( int cmp = 0; cmp < 4; cmp++ ) {
         cmpnfo[ cmp ].sfv = -1;
         cmpnfo[ cmp ].sfh = -1;
         cmpnfo[ cmp ].mbs = -1;
@@ -4544,10 +4539,10 @@ bool prepare_for_next_image( void )
     rsti      = 0;
     max_file_size = 0; // this file isn't truncated
     // reset quantization / huffman tables
-    for ( i = 0; i < 4; i++ ) {
+    for ( int i = 0; i < 4; i++ ) {
         htset[ 0 ][ i ] = 0;
         htset[ 1 ][ i ] = 0;
-        for ( bpos = 0; bpos < 64; bpos++ )
+        for ( int bpos = 0; bpos < 64; bpos++ )
             qtables[ i ][ bpos ] = 0;
     }
 
