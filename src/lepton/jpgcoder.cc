@@ -264,6 +264,7 @@ bool write_ujpg(std::vector<ThreadHandoff> row_thread_handoffs,
 bool read_ujpg( void );
 unsigned char read_fixed_ujpg_header( void );
 bool reset_buffers( void );
+void prep_for_new_file( void );
 
 
 /* -----------------------------------------------
@@ -335,16 +336,15 @@ Sirikata::Array1d<Sirikata::Array1d<huffCodes, 4>, 2> hcodes; // huffman codes
 Sirikata::Array1d<Sirikata::Array1d<huffTree, 4>, 2> htrees; // huffman decoding trees
 Sirikata::Array1d<Sirikata::Array1d<unsigned char, 4>, 2> htset;// 1 if huffman table is set
 bool embedded_jpeg = false;
-unsigned char* grbgdata            =     NULL;    // garbage data
-unsigned char* hdrdata          =   NULL;   // header data
-unsigned char* huffdata         =   NULL;   // huffman coded data
-int            hufs             =    0  ;   // size of huffman data
 uint32_t       hdrs             =    0  ;   // size of header
-uint32_t       zlib_hdrs        =    0  ;   // size of compressed header
-size_t         total_framebuffer_allocated = 0; // framebuffer allocated
+unsigned char* hdrdata          =   NULL;   // header data
+int            hufs             =    0  ;   // size of huffman data
+unsigned char* huffdata         =   NULL;   // huffman coded data
 int            grbs             =    0  ;   // size of garbage
-int            prefix_grbs = 0; // size of prefix;
-unsigned char *prefix_grbgdata = NULL; // if prefix_grb is specified, header is not prepended
+unsigned char* grbgdata         =   NULL;   // garbage data
+int            prefix_grbs      =    0  ;   // size of prefix;
+unsigned char *prefix_grbgdata  =   NULL;   // if prefix_grb is specified, header is not prepended
+uint32_t       zlib_hdrs        =    0  ;   // size of compressed header
 
 std::vector<unsigned int>  rstp;   // restart markers positions in huffdata
 std::vector<unsigned int>  scnp;   // scan start positions in huffdata
@@ -1506,24 +1506,6 @@ int open_fdout(const char *ifilename,
     return retval;
 }
 
-
-void prep_for_new_file() {
-    r_bitcount = 0;
-    if (prefix_grbgdata) {
-        aligned_dealloc(prefix_grbgdata);
-        prefix_grbgdata = NULL;
-    }
-    if (grbgdata && grbgdata != &EOI[0]) {
-        aligned_dealloc(grbgdata);
-        grbgdata = NULL;
-    }
-
-    prefix_grbs = 0;
-    reset_buffers();
-    auto cur_num_threads = read_fixed_ujpg_header();
-    always_assert(cur_num_threads <= NUM_THREADS); // this is an invariant we need to maintain
-    str_out->prep_for_new_file();
-}
 
 void concatenate_files(int fdint, int fdout);
 
@@ -4427,12 +4409,12 @@ bool read_ujpg( void )
             ReadFull(header_reader, ujpg_mrk, 4);
             prefix_grbs = LEtoUint32(ujpg_mrk);
             prefix_grbgdata = aligned_alloc(prefix_grbs);
-            memset(prefix_grbgdata, 0, sizeof(prefix_grbs));
             if ( prefix_grbgdata == NULL ) {
                 fprintf( stderr, MEM_ERRMSG );
                 errorlevel.store(2);
                 return false;
             }
+            memset(prefix_grbgdata, 0, sizeof(prefix_grbs));
             // read garbage data
             ReadFull(header_reader, prefix_grbgdata, prefix_grbs );
         }
@@ -4503,16 +4485,24 @@ bool reset_buffers( void )
 
     // -- free buffers --
 
-    // free buffers & set pointers NULL
-    if ( hdrdata  != NULL ) aligned_dealloc ( hdrdata );
-    if ( huffdata != NULL ) aligned_dealloc ( huffdata );
-    if ( grbgdata != NULL && grbgdata != EOI ) aligned_dealloc ( grbgdata );
+    // free buffers & set pointers to NULL
+    aligned_dealloc ( hdrdata );
+    aligned_dealloc ( huffdata );
+    aligned_dealloc ( prefix_grbgdata );
+    if ( grbgdata != EOI ) aligned_dealloc ( grbgdata );
+    hdrs             =    0  ;   // size of header
+    hdrdata          =   NULL;   // header data
+    hufs             =    0  ;   // size of huffman data
+    huffdata         =   NULL;   // huffman coded data
+    grbs             =    0  ;   // size of garbage
+    grbgdata         =   NULL;   // garbage data
+    prefix_grbs      =    0  ;   // size of prefix;
+    prefix_grbgdata  =   NULL;   // if prefix_grb is specified, header is not prepended
+    zlib_hdrs        =    0  ;   // size of compressed header
+
     rst_err.clear();
     rstp.resize(0);
     scnp.resize(0);
-    hdrdata   = NULL;
-    huffdata  = NULL;
-    grbgdata  = NULL;
 
     // free image arrays
     colldata.reset();
@@ -4566,6 +4556,14 @@ bool reset_buffers( void )
     padbit = -1;
 
     return true;
+}
+
+void prep_for_new_file() {
+    reset_buffers();
+    r_bitcount = 0;
+    auto cur_num_threads = read_fixed_ujpg_header();
+    always_assert(cur_num_threads <= NUM_THREADS); // this is an invariant we need to maintain
+    str_out->prep_for_new_file();
 }
 
 /* ----------------------- End of main functions -------------------------- */
@@ -4659,11 +4657,8 @@ bool setup_imginfo_jpg(bool only_allocate_two_image_rows)
     else {
         for ( cmp = 0; cmp < cmpc; cmp++ ) cmpnfo[ cmp ].sid = 0;
     }
-    size_t start_allocated = Sirikata::memmgr_size_allocated();
     // alloc memory for further operations
     colldata.init(cmpnfo, cmpc, mcuh, mcuv, jpegtype == 1 && only_allocate_two_image_rows);
-    size_t end_allocated = Sirikata::memmgr_size_allocated();
-    total_framebuffer_allocated = end_allocated - start_allocated;
     return true;
 }
 
