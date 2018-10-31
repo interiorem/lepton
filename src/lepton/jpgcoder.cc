@@ -472,6 +472,8 @@ int    ujgfilesize;            // size of UJG file
 int    jpegtype = 0;        // type of JPEG coding: 0->unknown, 1->sequential, 2->progressive
 F_TYPE filetype;            // type of current file
 F_TYPE ofiletype = LEPTON;            // desired type of output file
+bool g_progressive_image = true;   // enabled for progressive-encoded and other expensive to process images
+
 bool g_do_preload = false;
 std::unique_ptr<BaseEncoder> g_encoder;
 
@@ -1247,7 +1249,7 @@ size_t decompression_memory_bound() {
     current_run_size = cumulative_buffer_size;
 
     size_t bit_writer_augmentation = 0;
-    if (g_allow_progressive) {
+    if (g_progressive_image) {
         for (size_t cur_size = jpgfilesize - 1; cur_size; cur_size >>=1) {
             bit_writer_augmentation |= cur_size;
         }
@@ -1278,7 +1280,7 @@ size_t decompression_memory_bound() {
         single_threaded_buffer_bonus += jpgfilesize;
     }
     size_t abit_writer = 0;
-    if (g_allow_progressive) {
+    if (g_progressive_image) {
         if (zlib_hdrs * 3 < ABIT_WRITER_PRELOAD * 2 + 64) {
             if (zlib_hdrs * 3 < ABIT_WRITER_PRELOAD + 64) {
                 abit_writer += ABIT_WRITER_PRELOAD * 2 + 64;// these can't be reused memory
@@ -1289,7 +1291,7 @@ size_t decompression_memory_bound() {
     } else {
         abit_writer += 65536 + 64;
     }
-    if (g_allow_progressive &&
+    if (g_progressive_image &&
         jpgfilesize > ABIT_WRITER_PRELOAD) {
         // we currently buffer the whole jpeg in memory while streaming out
         abit_writer += 3 * jpgfilesize;
@@ -1981,7 +1983,7 @@ void process_file(IOUtil::FileReader* reader,
                         read_done = clock();
                     }
                     TimingHarness::timing[0][TimingHarness::TS_JPEG_RECODE_STARTED] = TimingHarness::get_time_us();
-                    if (filetype != UJG && !g_allow_progressive) {
+                    if (filetype != UJG && !g_progressive_image) {
                         execute(recode_baseline_jpeg_wrapper);
                     } else {
                         execute(recode_jpeg);
@@ -2281,7 +2283,7 @@ unsigned char read_fixed_ujpg_header() {
     }
     if (header[1] == 'Z' || (header[1] & 1) == ('Y' & 1)) {
         if (!g_force_progressive) {
-            g_allow_progressive = false;
+            g_progressive_image = false;
         }
     }
     unsigned char num_threads_hint = header[2];
@@ -2934,7 +2936,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
     int cmp, bpos, dpos;
     int mcu = 0, sub, csc;
     int eob, sta;
-    bool is_baseline = true;
+    bool is_progressive = false;
     max_cmp = 0; // the maximum component in a truncated image
     max_bpos = 0; // the maximum band in a truncated image
     memset(max_dpos, 0, sizeof(max_dpos)); // the maximum dpos in a truncated image
@@ -3029,21 +3031,17 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
 
             // (re)set rst wait counter
             rstw = rsti;
-            if (cs_cmpc != colldata.get_num_components()) {
-                if (!g_allow_progressive) {
-                    custom_exit(ExitCode::PROGRESSIVE_UNSUPPORTED);
-                } else {
-                    is_baseline = false;
-                }
-            }
 
-            if (jpegtype != 1) {
-                if (!g_allow_progressive) {
-                    custom_exit(ExitCode::PROGRESSIVE_UNSUPPORTED);
+            if (cs_cmpc != colldata.get_num_components() || jpegtype != 1) {
+                if (g_allow_progressive) {
+                    is_progressive = true;
                 } else {
-                    is_baseline = false;
+                    fprintf( stderr, "progressive-encoded jpegs aren't supported");
+                    errorlevel.store(2);  // todo: exit progran with ExitCode::PROGRESSIVE_UNSUPPORTED
+                    return false;
                 }
             }
+            
             // decoding for interleaved data
             if ( cs_cmpc > 1 )
             {
@@ -3415,8 +3413,10 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
     // clean up
     delete( huffr );
 
-    if (is_baseline) {
-        g_allow_progressive = false;
+    // switch to simpler baseline jpeg processing if file doesn't 
+    // contain progressive data
+    if (!is_progressive) {        
+        g_progressive_image = false;
     }
     return true;
 }
@@ -4158,7 +4158,7 @@ bool write_ujpg(std::vector<ThreadHandoff> row_thread_handoffs,
     unsigned char zed[] = {'\0'};
     if (start_byte != 0) {
         zed[0] = (unsigned char)'Y';
-    } else if (g_allow_progressive) {
+    } else if (g_progressive_image) {
         zed[0] = (unsigned char)'X';
     } else {
         zed[0] = (unsigned char)'Z';
@@ -4324,7 +4324,7 @@ bool read_ujpg( void )
         errorlevel.store(2);
         return false;
     }
-    bool memory_optimized_image = (filetype != UJG) && !g_allow_progressive;
+    bool memory_optimized_image = (filetype != UJG) && !g_progressive_image;
     // parse header for image-info
     if ( !setup_imginfo_jpg(memory_optimized_image) )
         return false;
@@ -4552,6 +4552,10 @@ bool prepare_for_next_image( void )
     // reset padbit
     padbit = -1;
 
+    // initialize per-file variable (that may be changed later)
+    // from the global option
+    g_progressive_image = g_allow_progressive;
+    
     return true;
 }
 
