@@ -263,8 +263,8 @@ bool write_ujpg(std::vector<ThreadHandoff> row_thread_handoffs,
                 std::vector<uint8_t, Sirikata::JpegAllocator<uint8_t> >*jpeg_file_raw_bytes);
 bool read_ujpg( void );
 unsigned char read_fixed_ujpg_header( void );
-bool reset_buffers( void );
-void prep_for_new_file( void );
+bool prepare_for_new_file( void );
+void prepare_for_new_image_in_the_same_file( void );
 
 
 /* -----------------------------------------------
@@ -492,6 +492,7 @@ uint64_t g_time_bound_ms = 0;
 int g_inject_syscall_test = 0;
 bool g_force_zlib0_out = false;
 
+bool g_progressive_image;   // current image is progressive?
 Sirikata::DecoderReader*    str_in      = NULL;    // input stream
 bounded_iostream*           str_out     = NULL;    // output stream
 // output stream
@@ -775,7 +776,7 @@ int EMSCRIPTEN_KEEPALIVE main(void) {
 
 
     // (re)set program has to be done first
-    reset_buffers();
+    prepare_for_new_file();
 
     // process file(s) - this is the main function routine
     begin = clock();
@@ -1245,7 +1246,7 @@ size_t decompression_memory_bound() {
     current_run_size = cumulative_buffer_size;
 
     size_t bit_writer_augmentation = 0;
-    if (g_allow_progressive) {
+    if (g_progressive_image) {
         for (size_t cur_size = jpgfilesize - 1; cur_size; cur_size >>=1) {
             bit_writer_augmentation |= cur_size;
         }
@@ -1276,7 +1277,7 @@ size_t decompression_memory_bound() {
         single_threaded_buffer_bonus += jpgfilesize;
     }
     size_t abit_writer = 0;
-    if (g_allow_progressive) {
+    if (g_progressive_image) {
         if (zlib_hdrs * 3 < ABIT_WRITER_PRELOAD * 2 + 64) {
             if (zlib_hdrs * 3 < ABIT_WRITER_PRELOAD + 64) {
                 abit_writer += ABIT_WRITER_PRELOAD * 2 + 64;// these can't be reused memory
@@ -1287,7 +1288,7 @@ size_t decompression_memory_bound() {
     } else {
         abit_writer += 65536 + 64;
     }
-    if (g_allow_progressive &&
+    if (g_progressive_image &&
         jpgfilesize > ABIT_WRITER_PRELOAD) {
         // we currently buffer the whole jpeg in memory while streaming out
         abit_writer += 3 * jpgfilesize;
@@ -1982,7 +1983,7 @@ void process_file(IOUtil::FileReader* reader,
                         read_done = clock();
                     }
                     TimingHarness::timing[0][TimingHarness::TS_JPEG_RECODE_STARTED] = TimingHarness::get_time_us();
-                    if (filetype != UJG && !g_allow_progressive) {
+                    if (filetype != UJG && !g_progressive_image) {
                         execute(recode_baseline_jpeg_wrapper);
                     } else {
                         execute(recode_jpeg);
@@ -2004,7 +2005,7 @@ void process_file(IOUtil::FileReader* reader,
                     } else if (trailer_new_header[4] != header[0] ||  trailer_new_header[5] != header[1]) {
                         break;
                     } else {
-                        prep_for_new_file();
+                        prepare_for_new_image_in_the_same_file();
                     }
                 }
                 str_out->close();
@@ -2278,7 +2279,7 @@ unsigned char read_fixed_ujpg_header() {
     }
     if (header[1] == 'Z' || (header[1] & 1) == ('Y' & 1)) {
         if (!g_force_progressive) {
-            g_allow_progressive = false;
+            g_progressive_image = false;
         }
     }
     unsigned char num_threads_hint = header[2];
@@ -3412,8 +3413,10 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
     // clean up
     delete( huffr );
 
-    if (is_baseline) {
-        g_allow_progressive = false;
+    // switch to simpler baseline jpeg processing if file doesn't 
+    // contain progressive data
+    if (is_baseline) {        
+        g_progressive_image = false;
     }
     return true;
 }
@@ -4155,7 +4158,7 @@ bool write_ujpg(std::vector<ThreadHandoff> row_thread_handoffs,
     unsigned char zed[] = {'\0'};
     if (start_byte != 0) {
         zed[0] = (unsigned char)'Y';
-    } else if (g_allow_progressive) {
+    } else if (g_progressive_image) {
         zed[0] = (unsigned char)'X';
     } else {
         zed[0] = (unsigned char)'Z';
@@ -4472,11 +4475,11 @@ bool read_ujpg( void )
 }
 
 
-/* -----------------------------------------------
-    set each variable to its initial value
-    ----------------------------------------------- */
+/* -----------------------------------------------------
+    Initialize engine before procesing each file (image)
+    ---------------------------------------------------- */
 
-bool reset_buffers( void )
+bool prepare_for_new_file( void )
 {
     // -- free buffers --
 
@@ -4550,11 +4553,16 @@ bool reset_buffers( void )
     // reset padbit
     padbit = -1;
 
+    // initialize per-file variable (that may be changed later)
+    // from the global option
+    g_progressive_image = g_allow_progressive;
+    
     return true;
 }
 
-void prep_for_new_file() {
-    reset_buffers();
+// Extra preparations before decoding extra images in the single file/stream
+void prepare_for_new_image_in_the_same_file() {
+    prepare_for_new_file();
     r_bitcount = 0;
     auto cur_num_threads = read_fixed_ujpg_header();
     always_assert(cur_num_threads <= NUM_THREADS); // this is an invariant we need to maintain
