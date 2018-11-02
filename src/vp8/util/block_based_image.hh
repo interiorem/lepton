@@ -49,6 +49,7 @@ public:
         return theoretical_component_height_;
     }
     void init (uint32_t width, uint32_t height, uint32_t nblocks, bool memory_optimized_image) {
+        reset();  // free previously allocated storage_
         theoretical_component_height_ = height;
         if (force_memory_optimization) {
             always_assert(memory_optimized_image && "MemoryOptimized must match template");
