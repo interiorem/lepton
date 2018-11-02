@@ -99,8 +99,8 @@ const char** g_argv = NULL;
 #define GIT_REVISION "unknown"
 #endif
 #endif
-bool g_permissive = false;
-bool fast_exit = true;
+bool g_permissive       = false;
+bool fast_exit          = false;  // skip freeing memory buffers and closing files (as result, memory usage grows while multiple files are processed)
 bool g_no_output_option = false;  // redirect output to null
 bool g_cache_input_data = false;  // read entire input file into buffer before going to process the data
 #ifdef SKIP_VALIDATION
@@ -2003,9 +2003,16 @@ void process_file(IOUtil::FileReader* reader,
     }
     if (!fast_exit) {
         // close iostreams
-        if ( str_in  != NULL ) delete( str_in  ); str_in  = NULL;
-        if ( str_out != NULL ) delete( str_out ); str_out = NULL;
-        if ( ujg_out != NULL ) delete( ujg_out ); ujg_out = NULL;
+        if (ujg_base_in != str_in) {
+            // ujg_base_in may be the same as str_in or Sirikata::BufferedReader(str_in)
+            // Thus we need to delete ujg_base_in, but only if it differs from str_in.
+            delete( ujg_base_in );
+        }
+        ujg_base_in = NULL;
+        delete( str_in  ); str_in  = NULL;
+        delete( str_out ); str_out = NULL;
+        delete( ujg_out ); ujg_out = NULL;
+
         // delete if broken or if output not needed
         if ((!pipe_on) && ((errorlevel.load() >= err_tresh)
                            || (action != comp && action != forkserve && action != socketserve))) {
