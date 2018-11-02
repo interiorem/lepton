@@ -4544,6 +4544,9 @@ bool prepare_for_next_image( void )
 
     // reset padbit
     padbit = -1;
+    
+    // It will be set to true on unexpected EOF in JPG, or special marker in LEP
+    early_eof_encountered = false;
 
     // initialize per-file variable (that may be changed later)
     // from the global option
