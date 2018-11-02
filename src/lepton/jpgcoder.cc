@@ -3417,8 +3417,12 @@ bool recode_jpeg( void )
     if (!g_use_seccomp) {
         pre_byte = clock();
     }
-    abitwriter*  huffw; // bitwise writer for image data
-    abytewriter* storw; // bytewise writer for storage of correction bits
+
+    // open huffman coded image data in abitwriter
+    abitwriter huffw(ABIT_WRITER_PRELOAD, max_file_size); // bitwise writer for image data
+    huffw.fillbit = padbit;
+
+    abytewriter storw(ABIT_WRITER_PRELOAD); // bytewise writer for storage of correction bits
 
     unsigned char  type = 0x00; // type of current marker segment
     unsigned int   len  = 0; // length of current marker segment
@@ -3433,13 +3437,6 @@ bool recode_jpeg( void )
     int mcu, sub, csc;
     int eob, sta;
     int tmp;
-
-    // open huffman coded image data in abitwriter
-    huffw = new abitwriter( ABIT_WRITER_PRELOAD, max_file_size);
-    huffw->fillbit = padbit;
-
-    // init storage writer
-    storw = new abytewriter( ABIT_WRITER_PRELOAD);
 
     // preset count of scans and restarts
     scnc = 0;
@@ -3456,8 +3453,6 @@ bool recode_jpeg( void )
             len = 2 + B_SHORT( hpos + 2 < hdrs ? hdrdata[ hpos + 2 ]:0, hpos + 3 < hdrs ? hdrdata[ hpos + 3 ] :0);
             if ( ( type == 0xC4 ) || ( type == 0xDA ) || ( type == 0xDD ) ) {
                 if ( !parse_jfif_jpg( type, len, len > hdrs - hpos ? hdrs - hpos : len, &( hdrdata[ hpos ] ) ) ) {
-                    delete huffw;
-                    delete storw;
                     return false;
                 }
                 int max_scan = 0;
@@ -3500,7 +3495,7 @@ bool recode_jpeg( void )
         dpos = 0;
 
         // store scan position
-        scnp.at(scnc) = huffw->getpos();
+        scnp.at(scnc) = huffw.getpos();
         scnp.at(scnc + 1) = 0; // danielrh@ avoid uninitialized memory when doing progressive writeout
         bool first_pass = true;
         // JPEG imagedata encoding routines
@@ -3550,7 +3545,7 @@ bool recode_jpeg( void )
                         lastdc[ cmp ] = dc;
 
                         // encode block
-                        eob = encode_block_seq( huffw,
+                        eob = encode_block_seq( &huffw,
                                                 &(hcodes[ 0 ][ cmpnfo[cmp].huffdc ]),
                                                 &(hcodes[ 1 ][ cmpnfo[cmp].huffac ]),
                                                 block.begin() );
@@ -3558,8 +3553,8 @@ bool recode_jpeg( void )
                         // check for errors, proceed if no error encountered
                         if ( eob < 0 ) sta = -1;
                         else sta = next_mcupos( &mcu, &cmp, &csc, &sub, &dpos, &rstw, cs_cmpc);
-                        if (sta == 0 && huffw->no_remainder()) {
-                            merge_jpeg_streaming(&streaming_progress, huffw->peekptr(), huffw->getpos(), false);
+                        if (sta == 0 && huffw.no_remainder()) {
+                            merge_jpeg_streaming(&streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                         }
                         if (str_out->has_exceeded_bound()) {
                             sta = 2;
@@ -3576,15 +3571,15 @@ bool recode_jpeg( void )
                         lastdc[ cmp ] = tmp;
 
                         // encode dc
-                        sta = encode_dc_prg_fs( huffw,
+                        sta = encode_dc_prg_fs( &huffw,
                                                 &(hcodes[ 0 ][ cmpnfo[cmp].huffdc ]),
                                                 block.begin() );
 
                         // next mcupos if no error happened
                         if ( sta != -1 )
                             sta = next_mcupos( &mcu, &cmp, &csc, &sub, &dpos, &rstw, cs_cmpc);
-                        if (sta == 0 && huffw->no_remainder()) {
-                            merge_jpeg_streaming(&streaming_progress, huffw->peekptr(), huffw->getpos(), false);
+                        if (sta == 0 && huffw.no_remainder()) {
+                            merge_jpeg_streaming(&streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                         }
                         if (str_out->has_exceeded_bound()) {
                             sta = 2;
@@ -3599,13 +3594,13 @@ bool recode_jpeg( void )
                         block[ 0 ] = BITN( colldata.at((BlockType)cmp , 0 , dpos ), cs_sal );
 
                         // encode dc correction bit
-                        sta = encode_dc_prg_sa( huffw, block.begin() );
+                        sta = encode_dc_prg_sa( &huffw, block.begin() );
 
                         // next mcupos if no error happened
                         if ( sta != -1 )
                             sta = next_mcupos( &mcu, &cmp, &csc, &sub, &dpos, &rstw, cs_cmpc);
-                        if (sta == 0 && huffw->no_remainder()) {
-                            merge_jpeg_streaming(&streaming_progress, huffw->peekptr(), huffw->getpos(), false);
+                        if (sta == 0 && huffw.no_remainder()) {
+                            merge_jpeg_streaming(&streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                         }
                         if (str_out->has_exceeded_bound()) {
                             sta = 2;
@@ -3630,7 +3625,7 @@ bool recode_jpeg( void )
                         lastdc[ cmp ] = dc;
 
                         // encode block
-                        eob = encode_block_seq( huffw,
+                        eob = encode_block_seq( &huffw,
                             &(hcodes[ 0 ][ cmpnfo[cmp].huffdc ]),
                             &(hcodes[ 1 ][ cmpnfo[cmp].huffac ]),
                                                 block.begin() );
@@ -3638,8 +3633,8 @@ bool recode_jpeg( void )
                         // check for errors, proceed if no error encountered
                         if ( eob < 0 ) sta = -1;
                         else sta = next_mcuposn( &cmp, &dpos, &rstw);
-                        if (sta == 0 && huffw->no_remainder()) {
-                            merge_jpeg_streaming(&streaming_progress, huffw->peekptr(), huffw->getpos(), false);
+                        if (sta == 0 && huffw.no_remainder()) {
+                            merge_jpeg_streaming(&streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                         }
                         if (str_out->has_exceeded_bound()) {
                             sta = 2;
@@ -3658,15 +3653,15 @@ bool recode_jpeg( void )
                             lastdc[ cmp ] = tmp;
 
                             // encode dc
-                            sta = encode_dc_prg_fs( huffw,
+                            sta = encode_dc_prg_fs( &huffw,
                                 &(hcodes[ 0 ][ cmpnfo[cmp].huffdc ]),
                                                     block.begin() );
 
                             // check for errors, increment dpos otherwise
                             if ( sta != -1 )
                                 sta = next_mcuposn( &cmp, &dpos, &rstw );
-                            if (sta == 0 && huffw->no_remainder()) {
-                                merge_jpeg_streaming(&streaming_progress, huffw->peekptr(), huffw->getpos(), false);
+                            if (sta == 0 && huffw.no_remainder()) {
+                                merge_jpeg_streaming(&streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                             }
                             if (str_out->has_exceeded_bound()) {
                                 sta = 2;
@@ -3682,7 +3677,7 @@ bool recode_jpeg( void )
                             block[ 0 ] = BITN( colldata.at((BlockType)cmp , 0 , dpos ), cs_sal );
 
                             // encode dc correction bit
-                            sta = encode_dc_prg_sa( huffw, block.begin() );
+                            sta = encode_dc_prg_sa( &huffw, block.begin() );
 
                             // next mcupos if no error happened
                             if ( sta != -1 )
@@ -3705,15 +3700,15 @@ bool recode_jpeg( void )
                                     FDIV2( aligned_block.coefficients_zigzag(bpos), cs_sal );
                             }
                             // encode block
-                            eob = encode_ac_prg_fs( huffw,
+                            eob = encode_ac_prg_fs( &huffw,
                                 &(hcodes[ 1 ][ cmpnfo[cmp].huffac ]),
                                                     block.begin(), &eobrun, cs_from, cs_to );
 
                             // check for errors, proceed if no error encountered
                             if ( eob < 0 ) sta = -1;
                             else sta = next_mcuposn( &cmp, &dpos, &rstw );
-                            if (sta == 0 && huffw->no_remainder()) {
-                                merge_jpeg_streaming(&streaming_progress, huffw->peekptr(), huffw->getpos(), false);
+                            if (sta == 0 && huffw.no_remainder()) {
+                                merge_jpeg_streaming(&streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                             }
                             if (str_out->has_exceeded_bound()) {
                                 sta = 2;
@@ -3722,7 +3717,7 @@ bool recode_jpeg( void )
                         }
 
                         // encode remaining eobrun
-                        encode_eobrun( huffw,
+                        encode_eobrun( &huffw,
                             &(hcodes[ 1 ][ cmpnfo[cmp].huffac ]),
                             &eobrun );
 
@@ -3738,15 +3733,15 @@ bool recode_jpeg( void )
                                     FDIV2( aligned_block.coefficients_zigzag(bpos), cs_sal );
                             }
                             // encode block
-                            eob = encode_ac_prg_sa( huffw, storw,
+                            eob = encode_ac_prg_sa( &huffw, &storw,
                                 &(hcodes[ 1 ][ cmpnfo[cmp].huffac ]),
                                 block.begin(), &eobrun, cs_from, cs_to );
 
                             // check for errors, proceed if no error encountered
                             if ( eob < 0 ) sta = -1;
                             else sta = next_mcuposn( &cmp, &dpos, &rstw );
-                            if (sta == 0 && huffw->no_remainder()) {
-                                merge_jpeg_streaming(&streaming_progress, huffw->peekptr(), huffw->getpos(), false);
+                            if (sta == 0 && huffw.no_remainder()) {
+                                merge_jpeg_streaming(&streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                             }
                             if (str_out->has_exceeded_bound()) {
                                 sta = 2;
@@ -3755,24 +3750,23 @@ bool recode_jpeg( void )
                         }
 
                         // encode remaining eobrun
-                        encode_eobrun( huffw,
+                        encode_eobrun( &huffw,
                             &(hcodes[ 1 ][ cmpnfo[cmp].huffac ]),
                             &eobrun );
 
                         // encode remaining correction bits
-                        encode_crbits( huffw, storw );
+                        encode_crbits( &huffw, &storw );
                     }
                 }
             }
 
             // pad huffman writer
-            huffw->pad( padbit );
+            huffw.pad( padbit );
 
             // evaluate status
             if ( sta == -1 ) { // status -1 means error
                 fprintf( stderr, "encode error in scan%i / mcu%i",
                     scnc, ( cs_cmpc > 1 ) ? mcu : dpos );
-                delete huffw;
                 errorlevel.store(2);
                 return false;
             }
@@ -3782,40 +3776,30 @@ bool recode_jpeg( void )
             }
             else if ( sta == 1 ) { // status 1 means restart
                 if ( rsti > 0 ) // store rstp & stay in the loop
-                    rstp.at(rstc++) = huffw->getpos() - 1;
+                    rstp.at(rstc++) = huffw.getpos() - 1;
             }
-            huffw->flush_no_pad();
-            dev_assert(huffw->no_remainder() && "this should have been padded");
-            if (huffw->no_remainder()) {
-                merge_jpeg_streaming(&streaming_progress, huffw->peekptr(), huffw->getpos(), false);
+            huffw.flush_no_pad();
+            dev_assert(huffw.no_remainder() && "this should have been padded");
+            if (huffw.no_remainder()) {
+                merge_jpeg_streaming(&streaming_progress, huffw.peekptr(), huffw.getpos(), false);
             }
         }
     }
 
     // safety check for error in huffwriter
-    if ( huffw->error ) {
-        delete huffw;
+    if ( huffw.error ) {
         fprintf( stderr, MEM_ERRMSG );
         errorlevel.store(2);
         return false;
     }
 
-    // get data into huffdata
-    huffdata = huffw->getptr();
-    hufs = huffw->getpos();
-    always_assert(huffw->no_remainder() && "this should have been padded");
-    merge_jpeg_streaming(&streaming_progress, huffdata, hufs, true);
-    if (!fast_exit) {
-        delete huffw;
-
-        // remove storage writer
-        delete storw;
-    }
+    // check for errors, proceed if no error encountered
+    always_assert(huffw.no_remainder() && "this should have been padded");
+    merge_jpeg_streaming(&streaming_progress, huffw.peekptr(), huffw.getpos(), true);
     // store last scan & restart positions
     scnp.at(scnc) = hufs;
     if ( !rstp.empty() )
         rstp.at(rstc) = hufs;
-
 
     return true;
 }
