@@ -1961,7 +1961,7 @@ void process_file(IOUtil::FileReader* reader,
                         TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
                     }
                     execute( read_ujpg ); // replace with decompression function!
-                    if (! g_cache_input_data)
+                    if (!g_cache_input_data)
                         TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
                         
                     if (!g_use_seccomp) {
@@ -2914,7 +2914,8 @@ MergeJpegStreamingStatus merge_jpeg_streaming(MergeJpegProgress *stored_progress
 bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_offsets,
                  std::vector<ThreadHandoff>*luma_row_offset_return)
 {
-    abitreader* huffr; // bitwise reader for image data
+    // open huffman coded image data for input in abitreader
+    abitreader huffr( huffdata, hufs );  // bitwise reader for image data
 
     unsigned char  type = 0x00; // type of current marker segment
     unsigned int   len  = 0; // length of current marker segment
@@ -2935,8 +2936,6 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
     memset(max_dpos, 0, sizeof(max_dpos)); // the maximum dpos in a truncated image
     max_sah = 0; // the maximum bit in a truncated image
 
-    // open huffman coded image data for input in abitreader
-    huffr = new abitreader( huffdata, hufs );
     // preset count of scans
     scnc = 0;
 
@@ -2959,7 +2958,6 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                     hdr_seg_data = &( hdrdata[ hpos ] );
                 }
                 if ( !parse_jfif_jpg( type, len, len, hdr_seg_data ) ) {
-                    delete huffr;
                     return false;
                 }
             }
@@ -2976,7 +2974,6 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                  ( jpegtype == 1 && htset[ 1 ][ cmpnfo[cmp].huffdc ] == 0 ) ||
                  ( cs_cmpc == 1 && cs_to > 0 && cs_sah == 0 && htset[ 1 ][ cmpnfo[cmp].huffac ] == 0 ) ) {
                 fprintf( stderr, "huffman table missing in scan%i", scnc );
-                delete huffr;
                 errorlevel.store(2);
                 return false;
             }
@@ -2989,7 +2986,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
         mcu  = 0;
         sub  = 0;
         dpos = 0;
-        if (!huffr->eof) {
+        if (!huffr.eof) {
             max_bpos = std::max(max_bpos, cs_to);
             // FIXME: not sure why only first bit of cs_sah is examined but 4 bits of it are stored
             max_sah = std::max(max_sah, std::max(cs_sal,cs_sah));
@@ -2999,7 +2996,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
         }
 /*
         // startup
-        luma_row_offset_return->push_back(crystallize_thread_handoff(huffr,
+        luma_row_offset_return->push_back(crystallize_thread_handoff(&huffr,
                                                                      huff_input_offsets,
                                                                      mcu / mcuh,
                                                                      lastdc,
@@ -3042,19 +3039,19 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                     // ---> sequential interleaved decoding <---
                     while ( sta == 0 ) {
                         if (do_handoff_print) {
-                            luma_row_offset_return->push_back(crystallize_thread_handoff(huffr,
+                            luma_row_offset_return->push_back(crystallize_thread_handoff(&huffr,
                                                                                          huff_input_offsets,
                                                                                          mcu / mcuh,
                                                                                          lastdc,
                                                                                          cmpnfo[0].bcv / mcuv));
                             do_handoff_print = false;
                         }
-
-                        if(!huffr->eof) {
+                        if (!huffr.eof) {
                             max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block read
                         }
+                        
                         // decode block
-                        eob = decode_block_seq( huffr,
+                        eob = decode_block_seq( &huffr,
                             &(htrees[ 0 ][ cmpnfo[cmp].huffdc ]),
                             &(htrees[ 1 ][ cmpnfo[cmp].huffac ]),
                             block.begin() );
@@ -3082,7 +3079,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                             //fprintf(stderr, "ROW %d\n", (int)row_handoff.size());
                             
                         }
-                        if(huffr->eof) {
+                        if(huffr.eof) {
                             sta = 2;
                             break;
                         }
@@ -3094,15 +3091,18 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                     // ---> succesive approximation first stage <---
                     while ( sta == 0 ) {
                         if (do_handoff_print) {
-                            luma_row_offset_return->push_back(crystallize_thread_handoff(huffr,
+                            luma_row_offset_return->push_back(crystallize_thread_handoff(&huffr,
                                                                                          huff_input_offsets,
                                                                                          mcu / mcuh,
                                                                                          lastdc,
                                                                                          cmpnfo[0].bcv / mcuv));
                             do_handoff_print = false;
                         }
-                        if(!huffr->eof) max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block serialized
-                        sta = decode_dc_prg_fs( huffr,
+                        if (!huffr.eof) {
+                            max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block read
+                        }
+
+                        sta = decode_dc_prg_fs( &huffr,
                             &(htrees[ 0 ][ cmpnfo[cmp].huffdc ]),
                             block.begin() );
 
@@ -3124,7 +3124,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                             //fprintf(stderr, "ROW %d\n", (int)row_handoff.size());
                             
                         }
-                        if(huffr->eof) {
+                        if(huffr.eof) {
                             sta = 2;
                             break;
                         }
@@ -3135,9 +3135,12 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                     // ---> progressive interleaved DC decoding <---
                     // ---> succesive approximation later stage <---
                     while ( sta == 0 ) {
-                        if(!huffr->eof) max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block serialized
+                        if (!huffr.eof) {
+                            max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block read
+                        }
+                        
                         // decode next bit
-                        sta = decode_dc_prg_sa( huffr,
+                        sta = decode_dc_prg_sa( &huffr,
                             block.begin() );
 
                         // shift in next bit
@@ -3146,7 +3149,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                         // next mcupos if no error happened
                         if ( sta != -1 )
                             sta = next_mcupos( &mcu, &cmp, &csc, &sub, &dpos, &rstw, cs_cmpc);
-                        if(huffr->eof) {
+                        if(huffr.eof) {
                             sta = 2;
                             break;
                         }
@@ -3162,16 +3165,19 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                     // ---> sequential non interleaved decoding <---
                     while ( sta == 0 ) {
                         if (do_handoff_print) {
-                            luma_row_offset_return->push_back(crystallize_thread_handoff(huffr,
+                            luma_row_offset_return->push_back(crystallize_thread_handoff(&huffr,
                                                                                          huff_input_offsets,
                                                                                          (dpos/(hmul * vmul)) / mcuh,
                                                                                          lastdc,
                                                                                          cmpnfo[0].bcv / mcuv));
                             do_handoff_print = false;
                         }
-                        if(!huffr->eof) max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block serialized
+                        if (!huffr.eof) {
+                            max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block read
+                        }
+
                         // decode block
-                        eob = decode_block_seq( huffr,
+                        eob = decode_block_seq( &huffr,
                             &(htrees[ 0 ][ cmpnfo[cmp].huffdc ]),
                             &(htrees[ 1 ][ cmpnfo[cmp].huffac ]),
                             block.begin() );
@@ -3197,7 +3203,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                             do_handoff_print = true;
 
                         }
-                        if(huffr->eof) {
+                        if(huffr.eof) {
                             sta = 2;
                             break;
                         }
@@ -3210,16 +3216,18 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                         // ---> succesive approximation first stage <---
                         while ( sta == 0 ) {
                             if (do_handoff_print) {
-                                luma_row_offset_return->push_back(crystallize_thread_handoff(huffr,
+                                luma_row_offset_return->push_back(crystallize_thread_handoff(&huffr,
                                                                                              huff_input_offsets,
                                                                                              dpos / cmpnfo[cmp].bch,
                                                                                              lastdc,
                                                                                              cmpnfo[0].bcv / mcuv));
                                 do_handoff_print = false;
                             }
+                            if (!huffr.eof) {
+                                max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block read
+                            }
 
-                            if(!huffr->eof) max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block serialized
-                            sta = decode_dc_prg_fs( huffr,
+                            sta = decode_dc_prg_fs( &huffr,
                                 &(htrees[ 0 ][ cmpnfo[cmp].huffdc ]),
                                 block.begin() );
 
@@ -3236,7 +3244,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                             if (cmp == 0 && dpos % cmpnfo[cmp].bch == 0) {
                                 do_handoff_print = true;
                             }
-                            if(huffr->eof) {
+                            if(huffr.eof) {
                                 sta = 2;
                                 break;
                             }
@@ -3247,9 +3255,12 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                         // ---> progressive non interleaved DC decoding <---
                         // ---> succesive approximation later stage <---
                         while( sta == 0 ) {
-                            if(!huffr->eof) max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block serialized
+                            if (!huffr.eof) {
+                                max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block read
+                            }
+
                             // decode next bit
-                            sta = decode_dc_prg_sa( huffr,
+                            sta = decode_dc_prg_sa( &huffr,
                                 block.begin() );
 
                             // shift in next bit
@@ -3258,7 +3269,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                             // check for errors, increment dpos otherwise
                             if ( sta != -1 )
                                 sta = next_mcuposn( &cmp, &dpos, &rstw );
-                            if(huffr->eof) {
+                            if(huffr.eof) {
                                 sta = 2;
                                 break;
                             }
@@ -3271,9 +3282,12 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                         // ---> progressive non interleaved AC decoding <---
                         // ---> succesive approximation first stage <---
                         while ( sta == 0 ) {
-                            if(!huffr->eof) max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block serialized
+                            if (!huffr.eof) {
+                                max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block read
+                            }
+
                             // decode block
-                            eob = decode_ac_prg_fs( huffr,
+                            eob = decode_ac_prg_fs( &huffr,
                                                     &(htrees[ 1 ][ cmpnfo[cmp].huffac ]),
                                                     block.begin(), &eobrun, cs_from, cs_to );
 
@@ -3299,7 +3313,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                             // proceed only if no error encountered
                             if ( sta == 0 )
                                 sta = next_mcuposn( &cmp, &dpos, &rstw );
-                            if(huffr->eof) {
+                            if(huffr.eof) {
                                 sta = 2;
                                 break;
                             }
@@ -3316,9 +3330,12 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                                 block[ bpos ] = aligned_block.coefficients_zigzag(bpos);
                             }
                             if ( eobrun == 0 ) {
-                                if(!huffr->eof) max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block serialized
+                                if (!huffr.eof) {
+                                    max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block read
+                                }
+
                                 // decode block (long routine)
-                                eob = decode_ac_prg_sa( huffr,
+                                eob = decode_ac_prg_sa( &huffr,
                                                         &(htrees[ 1 ][ cmpnfo[cmp].huffac ]),
                                                         block.begin(), &eobrun, cs_from, cs_to );
 
@@ -3333,9 +3350,12 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
 
                             }
                             else {
-                                if(!huffr->eof) max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block serialized
+                                if (!huffr.eof) {
+                                    max_dpos[cmp] = std::max(dpos, max_dpos[cmp]); // record the max block read
+                                }
+
                                 // decode block (short routine)
-                                eob = decode_eobrun_sa( huffr,
+                                eob = decode_eobrun_sa( &huffr,
                                                         block.begin(), &eobrun, cs_from, cs_to );
                                 if ( eob > 1 && !block[ eob - 1 ] ) {
                                     fprintf( stderr, "cannot encode image with eob after last 0" );
@@ -3353,7 +3373,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
                             // proceed only if no error encountered
                             if ( eob < 0 ) sta = -1;
                             else sta = next_mcuposn( &cmp, &dpos, &rstw );
-                            if(huffr->eof) {
+                            if(huffr.eof) {
                                 sta = 2;
                                 break;
                             }
@@ -3363,20 +3383,19 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
             }
             // unpad huffman reader / check padbit
             if ( padbit != -1 ) {
-                if ( padbit != huffr->unpad( padbit ) ) {
+                if ( padbit != huffr.unpad( padbit ) ) {
                     fprintf( stderr, "inconsistent use of padbits" );
                     padbit = 1;
                     errorlevel.store(1);
                 }
             }
             else {
-                padbit = huffr->unpad( padbit );
+                padbit = huffr.unpad( padbit );
             }
             // evaluate status
             if ( sta == -1 ) { // status -1 means error
                 fprintf( stderr, "decode error in scan%i / mcu%i",
                     scnc, ( cs_cmpc > 1 ) ? mcu : dpos );
-                delete huffr;
                 errorlevel.store(2);
                 return false;
             }
@@ -3390,7 +3409,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
     if (early_eof_encountered) {
         colldata.set_truncation_bounds(max_cmp, max_bpos, max_dpos, max_sah);
     }
-    luma_row_offset_return->push_back(crystallize_thread_handoff(huffr, huff_input_offsets, (uint16_t)(mcu / mcuh), lastdc, cmpnfo[0].bcv / mcuv));
+    luma_row_offset_return->push_back(crystallize_thread_handoff(&huffr, huff_input_offsets, (uint16_t)(mcu / mcuh), lastdc, cmpnfo[0].bcv / mcuv));
     for (size_t i = 1; i < luma_row_offset_return->size(); ++i) {
         if ((*luma_row_offset_return)[i].luma_y_start < 
             (*luma_row_offset_return)[i-1].luma_y_end) {
@@ -3398,13 +3417,10 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
         }
     }
     // check for unneeded data
-    if ( !huffr->eof ) {
+    if (!huffr.eof) {
         fprintf( stderr, "unneeded data found after coded image data" );
         errorlevel.store(1);
     }
-
-    // clean up
-    delete( huffr );
 
     // switch to simpler baseline jpeg processing if file doesn't 
     // contain progressive data
