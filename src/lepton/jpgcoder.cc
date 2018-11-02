@@ -3531,18 +3531,19 @@ bool recode_jpeg( void )
 
             // (re)set rst wait counter
             rstw = rsti;
-            if (cs_cmpc != colldata.get_num_components() && !g_allow_progressive) {
-                custom_exit(ExitCode::PROGRESSIVE_UNSUPPORTED);
-            }
-            if (jpegtype != 1 && !g_allow_progressive) {
-                custom_exit(ExitCode::PROGRESSIVE_UNSUPPORTED);
-            }
-            if ((jpegtype != 1 || cs_cmpc != colldata.get_num_components())
-                && colldata.is_memory_optimized(0)
-                && first_pass) {
-                colldata.init(cmpnfo, cmpc, mcuh, mcuv, false);
+
+            if (jpegtype != 1 || cs_cmpc != colldata.get_num_components()) {
+                if (! g_allow_progressive) {
+                    fprintf( stderr, "progressive-encoded jpegs aren't supported");
+                    errorlevel.store(2);  // todo: exit progran with ExitCode::PROGRESSIVE_UNSUPPORTED
+                    return false;
+                }
+                if (colldata.is_memory_optimized(0) && first_pass) {
+                    colldata.init(cmpnfo, cmpc, mcuh, mcuv, false);
+                }
             }
             first_pass = false;
+
             // encoding for interleaved data
             if ( cs_cmpc > 1 )
             {
