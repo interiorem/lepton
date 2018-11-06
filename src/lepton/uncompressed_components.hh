@@ -158,7 +158,7 @@ public:
             header_[cmp].trunc_bc_ = cmpinfo[cmp].bc;
         }
         if (!memory_optimized_image) {
-            for (int cmp = 0; cmp < (int)sizeof(header_)/(int)sizeof(header_[0]) && cmp < cmpc; cmp++) {
+            for (int cmp = 0; cmp < (int)header_.size() && cmp < cmpc_; cmp++) {
                 allocate_channel_framebuffer(cmp,
                                              &this->header_[cmp].component_,
                                              memory_optimized_image);
@@ -271,6 +271,9 @@ public:
     
     void reset() {
         bit_progress_ -= bit_progress_;
+        for (int cmp = 0; cmp < (int)header_.size() && cmp < cmpc_; cmp++) {
+            header_[cmp].component_.reset();
+        }
     }
     ~UncompressedComponents() {
         reset();
