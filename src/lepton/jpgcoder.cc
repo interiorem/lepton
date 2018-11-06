@@ -4647,11 +4647,8 @@ bool setup_imginfo_jpg(bool only_allocate_two_image_rows)
     else {
         for ( cmp = 0; cmp < cmpc; cmp++ ) cmpnfo[ cmp ].sid = 0;
     }
-    size_t start_allocated = Sirikata::memmgr_size_allocated();
     // alloc memory for further operations
     colldata.init(cmpnfo, cmpc, mcuh, mcuv, jpegtype == 1 && only_allocate_two_image_rows);
-    size_t end_allocated = Sirikata::memmgr_size_allocated();
-    total_framebuffer_allocated = end_allocated - start_allocated;
     return true;
 }
 
