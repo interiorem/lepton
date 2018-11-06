@@ -741,14 +741,8 @@ bool recode_baseline_jpeg(bounded_iostream*str_out,
         }
     }
     /* step 3: decode the scan, row by row */
-    std::tuple<uint8_t, uint8_t, Sirikata::Array1d<int16_t, (size_t)ColorChannel::NumBlockTypes> > overhang_byte_and_bit_count;
-    std::get<0>(overhang_byte_and_bit_count) = 0;
-    std::get<1>(overhang_byte_and_bit_count) = 0;
-    std::get<2>(overhang_byte_and_bit_count).memset(0);
-    Sirikata::JpegAllocator<uint8_t> alloc;
     Sirikata::Array1d<Sirikata::BoundedMemWriter, MAX_NUM_THREADS - 1> local_buffers;
     Sirikata::Array1d<abitwriter *, MAX_NUM_THREADS> huffws;
-    huffws.memset(0);
     for (size_t i = 0; i < NUM_THREADS; ++i) {
         huffws[i] = new abitwriter(65536, max_file_size);
     }
@@ -854,7 +848,6 @@ bool recode_baseline_jpeg(bounded_iostream*str_out,
         for (size_t i = 0; i < NUM_THREADS; ++i) {
             delete huffws[i];
         }
-        huffws.memset(0);
         for (size_t thread_id = 0; thread_id < NUM_THREADS; ++thread_id) {
             for(int cmp = 0; cmp < colldata.get_num_components(); ++cmp) {
                 framebuffer[thread_id][cmp]->reset();
