@@ -4297,12 +4297,12 @@ bool read_ujpg( void )
         ReadFull(header_reader, ujpg_mrk, 4 );
         hdrs = LEtoUint32(ujpg_mrk);
         hdrdata = (unsigned char*) aligned_alloc(hdrs);
-        memset(hdrdata, 0, hdrs);
         if ( hdrdata == NULL ) {
             fprintf( stderr, MEM_ERRMSG );
             errorlevel.store(2);
             return false;
         }
+        memset(hdrdata, 0, hdrs);
         // read hdrdata
         ReadFull(header_reader, hdrdata, hdrs );
     }
