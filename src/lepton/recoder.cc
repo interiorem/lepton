@@ -844,19 +844,19 @@ bool recode_baseline_jpeg(bounded_iostream*str_out,
     if (!str_out->has_reached_bound() ) {
         str_out->write( hdrdata + byte_position, hdrs - byte_position );
     }
-    if (ujgversion != 1) {
-        for (size_t i = 0; i < NUM_THREADS; ++i) {
-            delete huffws[i];
+    
+    // release allocated memory
+    for (size_t i = 0; i < NUM_THREADS; ++i) {
+        delete huffws[i];
+    }
+    for (size_t thread_id = 0; thread_id < NUM_THREADS; ++thread_id) {
+        for(int cmp = 0; cmp < colldata.get_num_components(); ++cmp) {
+            framebuffer[thread_id][cmp]->reset();
+            delete framebuffer[thread_id][cmp];
+            framebuffer[thread_id][cmp] = NULL;
         }
-        for (size_t thread_id = 0; thread_id < NUM_THREADS; ++thread_id) {
-            for(int cmp = 0; cmp < colldata.get_num_components(); ++cmp) {
-                framebuffer[thread_id][cmp]->reset();
-                delete framebuffer[thread_id][cmp];
-                framebuffer[thread_id][cmp] = NULL;
-            }
-            if (!g_threaded) {
-                break;
-            }
+        if (!g_threaded) {
+            break;
         }
     }
     check_decompression_memory_bound_ok();
