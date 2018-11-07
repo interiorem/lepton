@@ -38,9 +38,9 @@ namespace Sirikata {
 class SIRIKATA_EXPORT MuxReader {
 public:
     class SIRIKATA_EXPORT ResizableByteBuffer {
-        uint8_t *mBegin;
-        size_t mSize;
-        size_t mReserved;
+        uint8_t* mBegin;     // pointer to the buffer allocated
+        size_t   mReserved;  // how large is the bufffer allocated
+        size_t   mSize;      // how much bytes are actually stored in the buffer
         JpegAllocator<uint8_t> mAlloc;
         ResizableByteBuffer(const ResizableByteBuffer&other);
         ResizableByteBuffer& operator=(const ResizableByteBuffer&other);
@@ -59,11 +59,11 @@ public:
             std::swap(mAlloc, other.mAlloc);
         }
         uint8_t& operator[](const size_t offset) {
-            dev_assert(offset <mSize);
+            dev_assert(offset < mSize);
             return mBegin[offset];
         }
-        uint8_t operator[](const size_t offset) const{
-            dev_assert(offset <mSize);
+        uint8_t operator[](const size_t offset) const {
+            dev_assert(offset < mSize);
             return mBegin[offset];
         }
         uint8_t *data() {
@@ -81,8 +81,8 @@ public:
         size_t size() const {
             return mSize;
         }
-        bool empty()const {
-            return !mSize;
+        bool empty() const {
+            return (mSize == 0);
         }
         JpegAllocator<uint8_t> get_allocator() {
             return mAlloc;
@@ -96,32 +96,27 @@ public:
         }
         void reserve(size_t new_reserved) {
             if (new_reserved > mReserved) {
-                mReserved = new_reserved;
-                uint8_t *new_begin = (uint8_t*)mAlloc.allocate(mReserved);
+                uint8_t *new_begin = (uint8_t*)mAlloc.allocate(new_reserved);
                 if (mBegin != NULL) {
                     memcpy(new_begin, mBegin, mSize);
-                    mAlloc.destroy(mBegin);
+                    mAlloc.deallocate(mBegin, mReserved);
                 }
                 mBegin = new_begin;
+                mReserved = new_reserved;
             }
         }
         void resize(size_t new_size) {
             if (mReserved < new_size) {
-                mReserved *= 2;
-                if (mReserved < new_size) {
-                    mReserved = new_size;
+                size_t new_reserved = mReserved * 2;
+                if (new_reserved < new_size) {
+                    new_reserved = new_size;
                 }
-                uint8_t *new_begin = (uint8_t*)mAlloc.allocate(mReserved);
-                if (mBegin != NULL) {
-                    memcpy(new_begin, mBegin, mSize);
-                    mAlloc.destroy(mBegin);
-                }
-                mBegin = new_begin;
+                reserve(new_reserved);
             }
             dev_assert(mSize <= mReserved);
             mSize = new_size;
         }
-        ~ResizableByteBuffer() {
+        virtual ~ResizableByteBuffer() {
             if (mBegin) {
                 mAlloc.destroy(mBegin);
                 mAlloc.deallocate(mBegin, mReserved);
@@ -283,18 +278,18 @@ private:
     }
     void fillBufferEntirely(std::pair<ResizableByteBuffer::const_iterator,
                                       ResizableByteBuffer::const_iterator>* ret) {
-        bool all_error = false;
-        ResizableByteBuffer ib;
-        while (!all_error) {
-            all_error = true;
+        bool some_stream_may_have_more_data;
+        do {
+            some_stream_may_have_more_data = false;
             for (int i = 0; i < MAX_STREAM_ID; ++i) {
                 if (fillBufferOnce() == JpegError::nil()) {
-                    all_error = false;
+                    some_stream_may_have_more_data = true;
                 }
             }
-        }
+        } while (some_stream_may_have_more_data);
+
         for (int i = 0; i < MAX_STREAM_ID; ++i) {
-            ret[i].first=mBuffer[i].begin() + mOffset[i];
+            ret[i].first  = mBuffer[i].begin() + mOffset[i];
             ret[i].second = mBuffer[i].end();
         }
     }
