@@ -60,6 +60,8 @@ struct ResizableByteBufferList {
 
 class VP8ComponentDecoder_SendToVirtualThread {
     ResizableByteBufferList vbuffers[Sirikata::MuxReader::MAX_STREAM_ID];
+    // Auto-release all buffers allocated in this class by saving them into:
+    std::vector<std::unique_ptr<ResizableByteBufferListNode>> allocated_buffers;
     
     GenericWorker *all_workers;
     bool eof;

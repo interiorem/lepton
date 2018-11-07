@@ -186,6 +186,7 @@ void VP8ComponentDecoder_SendToVirtualThread::set_eof() {
                 if (thread_target[i] == int8_t(thread_id)) {
                     
                     auto eof = new ResizableByteBufferListNode;
+                    allocated_buffers.push_back(std::unique_ptr<ResizableByteBufferListNode>(eof));
                     eof->stream_id = i;
                     send(eof); // sends an EOF flag (empty buffer)
                 }
@@ -239,6 +240,7 @@ void VP8ComponentDecoder_SendToVirtualThread::send(ResizableByteBufferListNode *
 void VP8ComponentDecoder_SendToVirtualThread::drain(Sirikata::MuxReader&reader) {
     while (!reader.eof) {
         ResizableByteBufferListNode *data = new ResizableByteBufferListNode;
+        allocated_buffers.push_back(std::unique_ptr<ResizableByteBufferListNode>(data));
         auto ret = reader.nextDataPacket(*data);
         if (ret.second != Sirikata::JpegError::nil()) {
             set_eof();
@@ -273,6 +275,7 @@ ResizableByteBufferListNode* VP8ComponentDecoder_SendToVirtualThread::read(Sirik
     }
     while (!eof) {
         ResizableByteBufferListNode *data = new ResizableByteBufferListNode;
+        allocated_buffers.push_back(std::unique_ptr<ResizableByteBufferListNode>(data));
         auto ret = reader.nextDataPacket(*data);
         if (ret.second != JpegError::nil()) {
             set_eof();
@@ -301,6 +304,7 @@ void VP8ComponentDecoder_SendToVirtualThread::read_all(Sirikata::MuxReader&reade
     using namespace Sirikata;
     while (!eof) {
         ResizableByteBufferListNode *data = new ResizableByteBufferListNode;
+        allocated_buffers.push_back(std::unique_ptr<ResizableByteBufferListNode>(data));
         auto ret = reader.nextDataPacket(*data);
         if (ret.second != JpegError::nil()) {
             set_eof();
