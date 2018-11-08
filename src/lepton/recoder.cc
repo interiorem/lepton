@@ -846,6 +846,7 @@ bool recode_baseline_jpeg(bounded_iostream*str_out,
     }
     
     // release allocated memory
+    g_decoder->free_buffers();
     for (size_t i = 0; i < NUM_THREADS; ++i) {
         delete huffws[i];
     }

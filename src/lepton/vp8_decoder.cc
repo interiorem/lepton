@@ -198,9 +198,7 @@ VP8ComponentDecoder_SendToVirtualThread::VP8ComponentDecoder_SendToVirtualThread
 void VP8ComponentDecoder_SendToVirtualThread::init(GenericWorker * all_workers) {
     this->eof = false;
     for (unsigned int thread_id = 0; thread_id < MAX_NUM_THREADS; ++thread_id) {
-        if (!vbuffers[thread_id].empty()) {
-            vbuffers[thread_id].pop();
-        }
+        vbuffers[thread_id].clear();
     }
     this->all_workers = all_workers;
 }
@@ -307,6 +305,14 @@ void VP8ComponentDecoder_SendToVirtualThread::read_all(Sirikata::MuxReader&reade
         send(data);
     }
 }
+void VP8ComponentDecoder_SendToVirtualThread::free_buffers()
+{
+    for (unsigned int thread_id = 0; thread_id < NUM_THREADS; ++thread_id) {
+        vbuffers[thread_id].clear();  // clear queues that may still hold some buffers
+    }
+    allocated_buffers.clear();  // this also releases memory occupied by buffers contents
+}
+
 
 template<class BoolDecoder> template <bool force_memory_optimized>
 std::vector<ThreadHandoff> VP8ComponentDecoder<BoolDecoder>::initialize_decoder_state(const UncompressedComponents * const colldata,
@@ -372,9 +378,7 @@ namespace{void nop(){}}
 template <class BoolDecoder>
 void VP8ComponentDecoder<BoolDecoder>::reset_all_comm_buffers() {
     for (unsigned int thread_id = 0; thread_id < NUM_THREADS; ++thread_id) {
-        while (!send_to_actual_thread_state.vbuffers[thread_id].empty()) {
-            send_to_actual_thread_state.vbuffers[thread_id].pop();
-        }
+        send_to_actual_thread_state.vbuffers[thread_id].clear();
     }
 }
 

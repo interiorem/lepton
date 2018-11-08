@@ -48,6 +48,7 @@ class BaseDecoder {
     virtual void map_logical_thread_to_physical_thread(int thread_id, int target_thread_state) = 0;
     virtual void clear_thread_state(int thread_id, int target_thread_state, BlockBasedImagePerChannel<true>& framebuffer) = 0;
     virtual void reset_all_comm_buffers() = 0;
+    virtual void free_buffers() = 0;
 };
 
 
