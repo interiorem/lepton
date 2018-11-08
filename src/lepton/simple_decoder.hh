@@ -41,6 +41,7 @@ public:
 
     virtual void clear_thread_state(int thread_id, int target_thread_state, BlockBasedImagePerChannel<true>& framebuffer) {}
     virtual void flush(){}
+    void free_buffers() override {}
     virtual void map_logical_thread_to_physical_thread(int thread_id, int target_thread_state) {}
     size_t get_model_memory_usage() const {
         return 0;

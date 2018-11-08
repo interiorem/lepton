@@ -19,6 +19,9 @@ public:
         mux_splicer.bind_thread(logical_thread_id, physical_thread_id);
     }
     void reset_all_comm_buffers();
+    void free_buffers() override {
+        mux_splicer.free_buffers();
+    }    
 private:
     VP8ComponentDecoder_SendToActualThread send_to_actual_thread_state;
     Sirikata::DecoderReader *str_in {};
