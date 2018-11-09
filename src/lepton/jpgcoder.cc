@@ -1369,7 +1369,8 @@ int open_fdin(const char *ifilename,
               IOUtil::FileReader *reader,
               Sirikata::Array1d<uint8_t, 2> &header,
               ssize_t *bytes_read,
-              bool *is_socket) {
+              bool *is_socket,
+              bool &owns_fdin) {
     int fdin = -1;    
     if (reader != NULL) {
         *is_socket = reader->is_socket();
@@ -1389,11 +1390,13 @@ int open_fdin(const char *ifilename,
             );
         } while (fdin == -1 && errno == EINTR);
         if (fdin == -1) {
-            const char * errormessage = "Input file unable to be opened for writing:";
+            const char * errormessage = "Input file unable to be opened for reading: ";
             while(write(2, errormessage, strlen(errormessage)) == -1 && errno == EINTR) {}
             while(write(2, ifilename, strlen(ifilename)) == -1 && errno == EINTR) {}
             while(write(2, "\n", 1) == -1 && errno == EINTR) {}
+            custom_exit(ExitCode::FILE_NOT_FOUND);
         }
+        owns_fdin = true;
     }
     *bytes_read = 0;
     ssize_t data_read = 0;
@@ -1440,7 +1443,8 @@ int open_fdout(const char *ifilename,
                bool is_embedded_jpeg,
                     Sirikata::Array1d<uint8_t, 2> fileid,
                     bool force_compressed_output,
-                    bool *is_socket) {
+                    bool *is_socket,
+                    bool &owns_fdout) {
     if (writer != NULL) {
         *is_socket = writer->is_socket();
         return writer->get_fd();
@@ -1449,7 +1453,7 @@ int open_fdout(const char *ifilename,
     if (strcmp(ifilename, "-") == 0) {
         return 1;
     }
-    int retval = -1;
+    int fdout = -1;
     std::string ofilename;
     // check file id, determine filetype in order to build the outname
     if (g_no_output_option) {
@@ -1472,7 +1476,7 @@ int open_fdout(const char *ifilename,
     }
     
     do {
-        retval = open(ofilename.c_str(), O_WRONLY|O_CREAT|O_TRUNC
+        fdout = open(ofilename.c_str(), O_WRONLY|O_CREAT|O_TRUNC
 #ifdef _WIN32
             | O_BINARY
 #endif
@@ -1483,15 +1487,16 @@ int open_fdout(const char *ifilename,
             | S_IWUSR | S_IRUSR
 #endif
         );
-    }while (retval == -1 && errno == EINTR);
-    if (retval == -1) {
-        const char * errormessage = "Output file unable to be opened for writing:";
+    } while (fdout == -1 && errno == EINTR);
+    if (fdout == -1) {
+        const char * errormessage = "Output file unable to be opened for writing: ";
         while(write(2, errormessage, strlen(errormessage)) == -1 && errno == EINTR) {}
         while(write(2, ofilename.c_str(), ofilename.length()) == -1 && errno == EINTR) {}
         while(write(2, "\n", 1) == -1 && errno == EINTR) {}
         custom_exit(ExitCode::FILE_NOT_FOUND);
     }
-    return retval;
+    owns_fdout = true;
+    return fdout;
 }
 
 
@@ -1646,8 +1651,9 @@ void process_file(IOUtil::FileReader* reader,
     Sirikata::Array1d<uint8_t, 2> header = {{0, 0}};
     const char * ifilename = filelist[file_no];
     bool is_socket = false;
-    ssize_t bytes_read =0 ;
-    int fdin = open_fdin(ifilename, reader, header, &bytes_read, &is_socket);
+    ssize_t bytes_read = 0;
+    bool owns_fdin = false;  // we opened input file themselves and should close it
+    int fdin = open_fdin(ifilename, reader, header, &bytes_read, &is_socket, owns_fdin);
     /*
     if (g_permissive && bytes_read < 2) {
         std::vector<uint8_t> input(bytes_read);
@@ -1681,6 +1687,7 @@ void process_file(IOUtil::FileReader* reader,
         
         }*/
     int fdout = -1;
+    bool owns_fdout = false;  // we opened output file themselves and should close it
     if ((embedded_jpeg || is_jpeg_header(header) || g_permissive) && (g_permissive ||  !g_skip_validation)) {
         //fprintf(stderr, "ENTERED VALIDATION...\n");
         ExitCode validation_exit_code = ExitCode::SUCCESS;
@@ -1720,7 +1727,7 @@ void process_file(IOUtil::FileReader* reader,
             if (permissive_jpeg_return_backing.size() == 0) {
                 custom_exit(ExitCode::UNSUPPORTED_JPEG);
             }
-            fdout = open_fdout(ifilename, writer, embedded_jpeg, header, g_force_zlib0_out || force_zlib0, &is_socket);
+            fdout = open_fdout(ifilename, writer, embedded_jpeg, header, g_force_zlib0_out || force_zlib0, &is_socket, owns_fdout);
             {ExitCode validation_exit_code = ExitCode::UNSUPPORTED_JPEG;
             generic_compress(&permissive_jpeg_return_backing, &lepton_data, &validation_exit_code);
             if (validation_exit_code != ExitCode::SUCCESS) {
@@ -1742,7 +1749,7 @@ void process_file(IOUtil::FileReader* reader,
             custom_exit(ExitCode::SUCCESS);
             break;
         case ValidationContinuation::ROUNDTRIP_OK:
-            fdout = open_fdout(ifilename, writer, embedded_jpeg, header, g_force_zlib0_out || force_zlib0, &is_socket);
+            fdout = open_fdout(ifilename, writer, embedded_jpeg, header, g_force_zlib0_out || force_zlib0, &is_socket, owns_fdout);
             for (size_t data_sent = 0; data_sent < lepton_data.size();) {
                 ssize_t sent = write(fdout,
                                      lepton_data.data() + data_sent,
@@ -1764,12 +1771,12 @@ void process_file(IOUtil::FileReader* reader,
         }        
     } else {
         if (action != lepton_concatenate) {
-            fdout = open_fdout(ifilename, writer, embedded_jpeg, header, g_force_zlib0_out || force_zlib0, &is_socket);
+            fdout = open_fdout(ifilename, writer, embedded_jpeg, header, g_force_zlib0_out || force_zlib0, &is_socket, owns_fdout);
         }
     }
     if (action == lepton_concatenate) {
         concatenate_files(fdin, fdout);
-        return;
+        goto close_files;
     }
     // check input file and determine filetype
     check_file(fdin, fdout, max_file_size, force_zlib0, embedded_jpeg, header, is_socket);
@@ -1777,8 +1784,6 @@ void process_file(IOUtil::FileReader* reader,
     begin = clock();
     if ( filetype == JPEG )
     {
-
-
         if (ofiletype == LEPTON) {
             if (!g_encoder) {
                 if (ujgversion == 3) {
@@ -1870,9 +1875,9 @@ void process_file(IOUtil::FileReader* reader,
     }
 
 
-    std::vector<std::pair<uint32_t, uint32_t> > huff_input_offset;
     if ( filetype == JPEG )
     {
+        std::vector<std::pair<uint32_t, uint32_t> > huff_input_offset;
         switch ( action )
         {
             case lepton_concatenate:
@@ -2142,6 +2147,10 @@ void process_file(IOUtil::FileReader* reader,
     if ( ( verbosity > 1 ) && ( action == comp ) )
         fprintf( msgout,  "\n" );
     LeptonDebug::dumpDebugData();
+
+close_files:    
+    if (owns_fdin)   close(fdin);
+    if (owns_fdout)  close(fdout);
 }
 
 
