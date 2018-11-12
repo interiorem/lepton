@@ -4568,6 +4568,13 @@ bool prepare_for_next_image( void )
     g_progressive_image = g_allow_progressive;    
     NUM_THREADS = MAX_NUM_THREADS;
     g_threaded = option_threaded;    
+
+    // Free encoder or decoder, so for next file they will be recreated
+    // with appropriate parameters:
+    // ujgversion = 1(zlib+vp8), 2(brotli+vp8, 3(brotli+ans))
+    g_encoder.reset();
+    g_reference_to_free.reset();
+    g_decoder = NULL;
     
     return true;
 }
