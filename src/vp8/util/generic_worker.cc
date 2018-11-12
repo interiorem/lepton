@@ -54,13 +54,19 @@ void kill_workers(void * workers, uint64_t num_workers) {
     }
 }
 
+// (If necessary, create and)
+// return pointer to array of num_workers worker threads.
+// Note: all callers will reuse the same thread pool with MAX_NUM_THREADS elements.
 GenericWorker * GenericWorker::get_n_worker_threads(unsigned int num_workers) {
-    GenericWorker *retval = new GenericWorker[num_workers];
-    //for (unsigned int i = 0;i < num_workers; ++i) {
-    //    retval[i].wait_for_child_to_begin(); // setup security
-    //}
-    custom_atexit(&kill_workers, retval, num_workers);
-    return retval;
+    static GenericWorker* workers = NULL;
+    if (workers == NULL) {
+        workers = new GenericWorker[MAX_NUM_THREADS];
+        custom_atexit(&kill_workers, workers, MAX_NUM_THREADS);
+        //for (unsigned int i = 0;i < MAX_NUM_THREADS; ++i) {
+        //    retval[i].wait_for_child_to_begin(); // setup security
+        //}
+    }
+    return workers;
 }
 namespace {
 void sta_wait_for_work(void * gw) {
