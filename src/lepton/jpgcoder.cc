@@ -464,7 +464,12 @@ std::unique_ptr<BaseEncoder> g_encoder;
 
 std::unique_ptr<BaseDecoder> g_reference_to_free;
 ServiceInfo g_socketserve_info;
+
+// Global and per-file settings, allowing m/t processing of single file using worker threads pool.
+// Per-file setting is reinitialized from the global one in prepare_for_next_image()
+bool option_threaded = true;
 bool g_threaded = true;
+
 // this overrides the progressive bit in the header so that legacy progressive files may be decoded
 bool g_force_progressive = false;
 bool g_allow_progressive = 
@@ -1029,7 +1034,7 @@ int initialize_options( int argc, const char*const * argv )
             g_unkillable = true;
         }
         else if ( strcmp((*argv), "-singlethread" ) == 0)  {
-            g_threaded = false;
+            option_threaded = false;
         }
         else if ( strcmp((*argv), "-allowprogressive" ) == 0)  {
             g_allow_progressive = true;
@@ -1044,7 +1049,7 @@ int initialize_options( int argc, const char*const * argv )
         else if ( strcmp((*argv), "-unjailed" ) == 0)  {
             g_use_seccomp = false;
         } else if ( strcmp((*argv), "-multithread" ) == 0 || strcmp((*argv), "-m") == 0)  {
-            g_threaded = true;
+            option_threaded = true;
         } else if ( strcmp((*argv), "-evensplit" ) == 0)  {
             g_even_thread_split = true;
         } else if ( strstr((*argv), "-recodememory=") == *argv ) {
@@ -1200,7 +1205,7 @@ int initialize_options( int argc, const char*const * argv )
         exit(1);
     }
     if (g_do_preload && g_skip_validation) {
-        VP8ComponentDecoder<VPXBoolReader> *d = makeBoth<VPXBoolReader>(g_threaded, g_threaded && action != forkserve && action != socketserve);
+        VP8ComponentDecoder<VPXBoolReader> *d = makeBoth<VPXBoolReader>(option_threaded, option_threaded && action != forkserve && action != socketserve);
         g_encoder.reset(d);
         g_decoder = d;
     }
@@ -4558,9 +4563,11 @@ bool prepare_for_next_image( void )
     // It will be set to true on unexpected EOF in JPG, or special marker in LEP
     early_eof_encountered = false;
 
-    // initialize per-file variable (that may be changed later)
-    // from the global option
-    g_progressive_image = g_allow_progressive;
+    // initialize per-file variables (that may be changed later)
+    // from the global options
+    g_progressive_image = g_allow_progressive;    
+    NUM_THREADS = MAX_NUM_THREADS;
+    g_threaded = option_threaded;    
     
     return true;
 }
