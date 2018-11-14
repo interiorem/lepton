@@ -493,17 +493,6 @@ IOUtil::FileReader*         ujg_base_in = NULL;
 const char** filelist = NULL;        // list of files to process
 int    file_cnt = 0;        // count of files in list (1 for input only)
 int    file_no  = 0;        // number of current file
-/* -----------------------------------------------
-    global variables: messages
-    ----------------------------------------------- */
-
-std::string errormessage;
-std::atomic<int> errorlevel(0);
-// meaning of errorlevel:
-// -1 -> wrong input
-// 0 -> no error
-// 1 -> warning
-// 2 -> fatal error
 
 
 /* -----------------------------------------------
