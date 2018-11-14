@@ -138,18 +138,15 @@ public:
             }
         }
     }
-    void init(Sirikata::Array1d<componentInfo, ExtendedInfo::size0> cmpinfo, int cmpc,
+    // Store picture parameters and alloc memory if necessary.
+    // Return false if the picture cannot be processed.
+    bool init(Sirikata::Array1d<componentInfo, ExtendedInfo::size0> cmpinfo, int cmpc,
               int mcuh, int mcuv, bool memory_optimized_image) {
         mcuh_ = mcuh;
         mcuv_ = mcuv;
         if (cmpc > (int)ColorChannel::NumBlockTypes) {
-            cmpc = (int)ColorChannel::NumBlockTypes;
-            //abort here: we probably can't support this kind of image
-            const char * errmsg = "We only support 3 color channels or fewer\n";
-            int err = write(2, errmsg, strlen(errmsg));
-            (void)err;
-            dev_assert(cmpc <= (int)ColorChannel::NumBlockTypes && "We only support 3 color channels or less");
-            custom_exit(ExitCode::UNSUPPORTED_4_COLORS);
+            set_error_code(ExitCode::UNSUPPORTED_4_COLORS, "We only support 3 color channels or fewer");
+            return false;
         }
         cmpc_ = cmpc;
         for (int cmp = 0; cmp < cmpc; cmp++) {
@@ -164,6 +161,7 @@ public:
                                              memory_optimized_image);
             }
         }
+        return true;
     }
     void set_block_count_dpos(ExtendedComponentInfo *ci, int trunc_bc) {
         always_assert(ci->info_.bcv == ci->info_.bc / ci->info_.bch + (ci->info_.bc % ci->info_.bch ?  1 : 0));

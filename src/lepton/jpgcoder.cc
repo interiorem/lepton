@@ -3549,7 +3549,9 @@ bool recode_jpeg( void )
                     return false;
                 }
                 if (colldata.is_memory_optimized(0) && first_pass) {
-                    colldata.init(cmpnfo, cmpc, mcuh, mcuv, false);
+                    if (!colldata.init(cmpnfo, cmpc, mcuh, mcuv, false)) {
+                        return false;
+                    }
                 }
             }
             first_pass = false;
@@ -4660,7 +4662,9 @@ bool setup_imginfo_jpg(bool only_allocate_two_image_rows)
         for ( cmp = 0; cmp < cmpc; cmp++ ) cmpnfo[ cmp ].sid = 0;
     }
     // alloc memory for further operations
-    colldata.init(cmpnfo, cmpc, mcuh, mcuv, jpegtype == 1 && only_allocate_two_image_rows);
+    if (!colldata.init(cmpnfo, cmpc, mcuh, mcuv, jpegtype == 1 && only_allocate_two_image_rows)) {
+        return false;
+    }
     return true;
 }
 
