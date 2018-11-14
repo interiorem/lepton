@@ -6,9 +6,12 @@
 #include <assert.h>
 #include <cstdio>
 #include <cstring>
+#include <atomic>
 #include "../../io/DecoderPlatform.hh"
 #include "../../io/MemMgrAllocator.hh"
 extern bool g_use_seccomp;
+extern std::string errormessage;
+extern std::atomic<int> errorlevel;
 
 #define FOREACH_EXIT_CODE(CB)                   \
     CB(SUCCESS,0)                               \
@@ -95,6 +98,10 @@ void custom_free(void* ptr);
 void * custom_calloc(size_t size);
 void set_close_thread_handle(int handle);
 void reset_close_thread_handle();
+
+// Set error code and message when image cannot be processed by the library
+void set_error_code(ExitCode code, const char* msg);
+
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 
