@@ -316,7 +316,8 @@ template<class BoolDecoder> void LeptonCodec<BoolDecoder>::worker_thread(ThreadS
     TimingHarness::timing[thread_id][TimingHarness::TS_ARITH_STARTED] = TimingHarness::get_time_us();
     for (uint8_t i = 0; i < Sirikata::MuxReader::MAX_STREAM_ID; ++i) {
         if (thread_target[i] == int8_t(thread_id)) {
-            ts->bool_decoder_.init(new ActualThreadPacketReader(i,worker, send_to_actual_thread_state));
+            std::unique_ptr<PacketReader> reader {new ActualThreadPacketReader(i, worker, send_to_actual_thread_state)};
+            ts->init_bool_decoder(std::move(reader));
         }
     }
     while (ts->vp8_decode_thread(thread_id, colldata) == CODING_PARTIAL) {

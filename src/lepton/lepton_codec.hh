@@ -104,6 +104,7 @@ protected:
     struct ThreadState {
         ProbabilityTablesBase model_;
         BoolDecoder bool_decoder_;
+        std::unique_ptr<PacketReader> reader_;  // input stream consumed by the bool decoder
         // the splits this thread is concerned with...always 1 more than the number of work items
         std::vector<int> luma_splits_;
         Sirikata::Array1d<bool, (size_t)ColorChannel::NumBlockTypes> is_top_row_;
@@ -112,6 +113,11 @@ protected:
         Sirikata::Array1d<std::vector<NeighborSummary>, (size_t)ColorChannel::NumBlockTypes> num_nonzeros_;
         uint32_t decode_index_;
         bool is_valid_range_;
+    public:
+        void init_bool_decoder(std::unique_ptr<PacketReader> reader) {
+            reader_.swap(reader);
+            bool_decoder_.init(reader_.get());
+        }
         template<class Left, class Middle, class Right, bool should_force_memory_optimization>
         void decode_row(Left & left_model,
                         Middle& middle_model,
