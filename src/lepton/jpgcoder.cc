@@ -1649,6 +1649,7 @@ void process_file(IOUtil::FileReader* reader,
 
     Sirikata::Array1d<uint8_t, 2> header = {{0, 0}};
     const char * ifilename = filelist[file_no];
+    fprintf(stderr, "================================== %s\n", ifilename);
     bool is_socket = false;
     ssize_t bytes_read = 0;
     bool owns_fdin = false;  // we opened input file themselves and should close it
@@ -4313,12 +4314,12 @@ bool read_ujpg( void )
         ReadFull(header_reader, ujpg_mrk, 4 );
         hdrs = LEtoUint32(ujpg_mrk);
         hdrdata = (unsigned char*) aligned_alloc(hdrs);
-        memset(hdrdata, 0, hdrs);
         if ( hdrdata == NULL ) {
             fprintf( stderr, MEM_ERRMSG );
             errorlevel.store(2);
             return false;
         }
+        memset(hdrdata, 0, hdrs);
         // read hdrdata
         ReadFull(header_reader, hdrdata, hdrs );
     }
@@ -4396,12 +4397,12 @@ bool read_ujpg( void )
             ReadFull(header_reader, ujpg_mrk, 4);
             grbs = LEtoUint32(ujpg_mrk);
             grbgdata = aligned_alloc(grbs);
-            memset(grbgdata, 0, sizeof(grbs));
             if ( grbgdata == NULL ) {
                 fprintf( stderr, MEM_ERRMSG );
                 errorlevel.store(2);
                 return false;
             }
+            memset(grbgdata, 0, grbs);
             // read garbage data
             ReadFull(header_reader, grbgdata, grbs );
         }
@@ -4414,12 +4415,12 @@ bool read_ujpg( void )
             ReadFull(header_reader, ujpg_mrk, 4);
             prefix_grbs = LEtoUint32(ujpg_mrk);
             prefix_grbgdata = aligned_alloc(prefix_grbs);
-            memset(prefix_grbgdata, 0, sizeof(prefix_grbs));
             if ( prefix_grbgdata == NULL ) {
                 fprintf( stderr, MEM_ERRMSG );
                 errorlevel.store(2);
                 return false;
             }
+            memset(prefix_grbgdata, 0, prefix_grbs);
             // read garbage data
             ReadFull(header_reader, prefix_grbgdata, prefix_grbs );
         }
