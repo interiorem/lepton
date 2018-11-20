@@ -73,8 +73,6 @@ VP8ComponentDecoder<BoolEncoder>::~VP8ComponentDecoder() {
 
 template <class BoolEncoder>
 void VP8ComponentDecoder<BoolEncoder>::clear_thread_state(int thread_id, int target_thread_state, BlockBasedImagePerChannel<true>& framebuffer) {
-
-
     initialize_thread_id(thread_id, target_thread_state, framebuffer);
     initialize_bool_decoder(thread_id, target_thread_state);
 }
@@ -112,13 +110,13 @@ void VP8ComponentDecoder<BoolDecoder>::registerWorkers(GenericWorker *workers, u
 
 template <class BoolDecoder>
 void VP8ComponentDecoder<BoolDecoder>::initialize_bool_decoder(int thread_id, int target_thread_state) {
+    std::unique_ptr<PacketReader> reader;
     if (NUM_THREADS > 1 && g_threaded) {
-        this->thread_state_[target_thread_state]->bool_decoder_.init(new ActualThreadPacketReader(thread_id,
-                                                                                            getWorker(target_thread_state),
-                                                                                            &send_to_actual_thread_state));
+        reader.reset(new ActualThreadPacketReader(thread_id, getWorker(target_thread_state), &send_to_actual_thread_state));
     } else {
-        this->thread_state_[target_thread_state]->bool_decoder_.init(new VirtualThreadPacketReader(thread_id, &mux_reader_, &mux_splicer));
+        reader.reset(new VirtualThreadPacketReader(thread_id, &mux_reader_, &mux_splicer));
     }
+    this->thread_state_[target_thread_state]->init_bool_decoder(std::move(reader));
 }
 
 template <class BoolDecoder> template <bool force_memory_optimized>
@@ -401,10 +399,9 @@ CodingReturnValue VP8ComponentDecoder<BoolDecoder>::decode_chunk(UncompressedCom
         for (size_t i = 0; i < all_framebuffers.size(); ++i) {
             all_framebuffers[i] = framebuffer;
         }
+
         size_t num_threads_needed = initialize_decoder_state(colldata,
                                                              all_framebuffers).size();
-
-
         for (size_t i = 0;i < num_threads_needed; ++i) {
             map_logical_thread_to_physical_thread(i, i);
         }
@@ -468,7 +465,8 @@ CodingReturnValue VP8ComponentDecoder<BoolDecoder>::decode_chunk(UncompressedCom
             }
 
             initialize_thread_id(thread_id, 0, framebuffer);
-            this->thread_state_[0]->bool_decoder_.init(new VirtualThreadPacketReader(thread_id, &mux_reader_, &mux_splicer));
+            std::unique_ptr<PacketReader> reader {new VirtualThreadPacketReader(thread_id, &mux_reader_, &mux_splicer)};
+            this->thread_state_[0]->init_bool_decoder(std::move(reader));
             TimingHarness::timing[thread_id][TimingHarness::TS_ARITH_STARTED] = TimingHarness::get_time_us();
             CodingReturnValue ret;
             if ((ret = this->thread_state_[0]->vp8_decode_thread(0, colldata)) == CODING_PARTIAL) {
