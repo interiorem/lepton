@@ -160,9 +160,18 @@ void * bzero32(void *aligned_32) {
 void * custom_calloc(size_t size) {
 #ifdef USE_STANDARD_MEMORY_ALLOCATORS
 #ifdef _WIN32
-    return _aligned_recalloc(bzero32(_aligned_malloc(32, 32)), 1, size, 32);
+    // FIXME: MS docs doesn't specify whether we can call _aligned_recalloc(0...)
+    // although it's allowed for _aligned_realloc
+    void *ptr = _aligned_malloc(32, 32);
+    if (ptr) {
+        bzero32(ptr);
+        ptr = _aligned_recalloc(ptr, 1, size, 32);
+    }
+    return ptr;
 #else
-    return memset(custom_malloc(size), 0, size);
+    void *ptr = custom_malloc(size);
+    if (ptr)  memset(ptr, 0, size);
+    return ptr;
 #endif
 #else
     void * retval = Sirikata::memmgr_alloc(size); // guaranteed to return 0'd memory
