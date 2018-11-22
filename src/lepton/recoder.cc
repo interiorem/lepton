@@ -385,7 +385,6 @@ bool recode_one_mcu_row(abitwriter *huffw, int mcu,
         }
         // evaluate status
         if ( sta == -1 ) { // status -1 means error
-            delete huffw;
             return false;
         }
         else if ( sta == 2 ) { // status 2 means done
