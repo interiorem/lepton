@@ -28,9 +28,7 @@ public:
         nblocks_ = 0;
         theoretical_component_height_ = 0;
         image_ = nullptr;
-        if (storage_ != nullptr) {
-            custom_free(storage_);
-        }
+        custom_free(storage_);
         storage_ = nullptr;
     }
     bool is_memory_optimized() const {
