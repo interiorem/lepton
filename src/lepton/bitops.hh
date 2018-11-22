@@ -374,6 +374,8 @@ public:
 	bool error;	
 	
 private:
+	void extend_buffer( int newSize );
+    
 	unsigned char* data;
 	int dsize;
 	int adds;
