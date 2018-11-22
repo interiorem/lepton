@@ -442,6 +442,9 @@ void memmgr_free(void* ap){
 // same as memmgr_free but with some differences in debug logging
 void memmgr_free_helper(void* ap, bool actually_free)
 {
+    if (ap == nullptr) {
+        return;  // Ignore free(nullptr) calls
+    }
     MemMgrState& memmgr = get_local_memmgr();
     if ((uint8_t*)ap >= memmgr.pool + memmgr.pool_size
         || (uint8_t*)ap < memmgr.pool) {
