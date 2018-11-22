@@ -5002,10 +5002,9 @@ bool rebuild_header_jpg( void )
              ( type == 0xDD ) ) {
             uint32_t to_copy = hpos + len < hdrs ? len : hdrs - hpos;
             hdrw->write_n( &(hdrdata[ hpos ]), to_copy);
-            if (to_copy <  len) {
-                for (uint32_t i = 0;i <to_copy -len;++i) {
-                    uint8_t zero = 0;
-                    hdrw->write_n(&zero, 1);
+            if (to_copy < len) {
+                for (uint32_t i = 0; i < to_copy - len; ++i) {
+                    hdrw->write(0);
                 }
             }
         }
