@@ -533,6 +533,10 @@ static const unsigned char   lepton_header[] = { 0xcf, 0x84 }; // the tau symbol
 static const unsigned char   zlepton_header[] = { 0xce, 0xb6 }; // the zeta symbol for a zlib compressed lepton
 
 
+/* -----------------------------------------------
+    timing functions
+    ----------------------------------------------- */
+
 FILE * timing_log = NULL;
 char current_operation = '\0';
 #ifdef _WIN32
@@ -623,6 +627,20 @@ void timing_operation_complete( char operation ) {
     memset(&current_operation_first_byte, 0, sizeof(current_operation_first_byte));
 #endif
 #endif
+}
+
+
+/* -----------------------------------------------
+    miscellaneous functions
+    ----------------------------------------------- */
+
+// Return string describing JPEG file type
+const char* jpegtype_str (JPEG_TYPE jpegtype) {
+    switch (jpegtype) {
+      case JPEG_TYPE::BASELINE:        return "baseline";
+      case JPEG_TYPE::PROGRESSIVE:     return "progressive";
+      default:                         return "UNKNOWN";
+    }                                         
 }
 
 size_t local_atoi(const char *data) {
@@ -2068,8 +2086,9 @@ void process_file(IOUtil::FileReader* reader,
           if ( errorlevel.load() < err_tresh ) {
                 if (action == comp ) {
                     fprintf(stdout, 
-                        (filetype == JPEG?  "STATS %.6lf %s %d %d %.6lf %.6lf %.6lf\n"
-                                         :  "STATS %.6lf %s %d %d %.6lf\n"),
+                        (filetype == JPEG?  "%s %.6lf %s %d %d %.6lf %.6lf %.6lf\n"
+                                         :  "%s %.6lf %s %d %d %.6lf\n"),
+                        jpegtype_str(jpegtype),
                         double(TimingHarness::timing[0][TimingHarness::TS_DONE] - TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED]) / 1e6,
                         ifilename,
                         (int)jpgfilesize, 
