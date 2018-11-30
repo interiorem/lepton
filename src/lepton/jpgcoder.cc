@@ -452,16 +452,20 @@ BaseDecoder *makeDecoder(bool threaded, bool start_workers, bool ans) {
 /* -----------------------------------------------
     global variables: info about files
     ----------------------------------------------- */
-int    jpgfilesize;            // size of JPEG file
-int    ujgfilesize;            // size of UJG file
-int    jpegtype = 0;        // type of JPEG coding: 0->unknown, 1->sequential, 2->progressive
-F_TYPE filetype;            // type of current file
-F_TYPE ofiletype = LEPTON;            // desired type of output file
-bool g_progressive_image = true;   // enabled for progressive-encoded and other expensive to process images
+enum class JPEG_TYPE {UNKNOWN, BASELINE, PROGRESSIVE};
+int    jpgfilesize;                 // size of JPEG file
+int    ujgfilesize;                 // size of UJG file
+JPEG_TYPE jpegtype = JPEG_TYPE::UNKNOWN;  // type of JPEG coding
+F_TYPE filetype;                    // type of current file
+F_TYPE ofiletype = LEPTON;          // desired type of output file
+bool   g_progressive_image = true;  // enabled for progressive-encoded and other expensive to process images
 
+
+/* ------------------------------------------------
+    global variables
+    ----------------------------------------------- */
 bool g_do_preload = false;
 std::unique_ptr<BaseEncoder> g_encoder;
-
 std::unique_ptr<BaseDecoder> g_reference_to_free;
 ServiceInfo g_socketserve_info;
 
@@ -1213,7 +1217,7 @@ size_t decompression_memory_bound() {
             colldata.block_width(i)
             * 2 * NUM_THREADS * 64 * sizeof(uint16_t);
         size_t frame_buffer_size = colldata.component_size_allocated(i);
-        if (cs_cmpc != colldata.get_num_components() || jpegtype != 1) {
+        if (cs_cmpc != colldata.get_num_components() || jpegtype != JPEG_TYPE::BASELINE) {
             streaming_size = frame_buffer_size;
         } else if (filetype != JPEG) {
             if (!g_threaded) {
@@ -2985,8 +2989,8 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
         // check if huffman tables are available
         for ( csc = 0; csc < cs_cmpc; csc++ ) {
             cmp = cs_cmp[ csc ];
-            if ( (( jpegtype == 1 || (( cs_cmpc > 1 || cs_to == 0 ) && cs_sah == 0 )) && htset[ 0 ][ cmpnfo[cmp].huffdc ] == 0 ) || 
-                 ( jpegtype == 1 && htset[ 1 ][ cmpnfo[cmp].huffdc ] == 0 ) ||
+            if ( (( jpegtype == JPEG_TYPE::BASELINE || (( cs_cmpc > 1 || cs_to == 0 ) && cs_sah == 0 )) && htset[ 0 ][ cmpnfo[cmp].huffdc ] == 0 ) || 
+                 ( jpegtype == JPEG_TYPE::BASELINE && htset[ 1 ][ cmpnfo[cmp].huffdc ] == 0 ) ||
                  ( cs_cmpc == 1 && cs_to > 0 && cs_sah == 0 && htset[ 1 ][ cmpnfo[cmp].huffac ] == 0 ) ) {
                 fprintf( stderr, "huffman table missing in scan%i", scnc );
                 errorlevel.store(2);
@@ -3037,7 +3041,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
             // (re)set rst wait counter
             rstw = rsti;
 
-            if (cs_cmpc != colldata.get_num_components() || jpegtype != 1) {
+            if (cs_cmpc != colldata.get_num_components() || jpegtype != JPEG_TYPE::BASELINE) {
                 if (g_allow_progressive) {
                     g_progressive_image = true;
                 } else {
@@ -3049,7 +3053,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
             // decoding for interleaved data
             if ( cs_cmpc > 1 )
             {
-                if ( jpegtype == 1 ) {
+                if ( jpegtype == JPEG_TYPE::BASELINE ) {
                     // ---> sequential interleaved decoding <---
                     while ( sta == 0 ) {
                         if (do_handoff_print) {
@@ -3173,7 +3177,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
             }
             else // decoding for non interleaved data
             {
-                if ( jpegtype == 1 ) {
+                if ( jpegtype == JPEG_TYPE::BASELINE ) {
                     int vmul = cmpnfo[0].bcv / mcuv;
                     int hmul = cmpnfo[0].bch / mcuh;
                     // ---> sequential non interleaved decoding <---
@@ -3548,7 +3552,7 @@ bool recode_jpeg( void )
             // (re)set rst wait counter
             rstw = rsti;
 
-            if (jpegtype != 1 || cs_cmpc != colldata.get_num_components()) {
+            if (jpegtype != JPEG_TYPE::BASELINE || cs_cmpc != colldata.get_num_components()) {
                 if (!g_progressive_image) {
                     set_error_code(ExitCode::STREAM_INCONSISTENT, "Non-progressive LEPTON file contains progressive-specific data");
                     return false;
@@ -3564,7 +3568,7 @@ bool recode_jpeg( void )
             // encoding for interleaved data
             if ( cs_cmpc > 1 )
             {
-                if ( jpegtype == 1 ) {
+                if ( jpegtype == JPEG_TYPE::BASELINE ) {
                     // ---> sequential interleaved encoding <---
                     while ( sta == 0 ) {
                         // copy from colldata
@@ -3645,7 +3649,7 @@ bool recode_jpeg( void )
             }
             else // encoding for non interleaved data
             {
-                if ( jpegtype == 1 ) {
+                if ( jpegtype == JPEG_TYPE::BASELINE ) {
                     // ---> sequential non interleaved encoding <---
                     while ( sta == 0 ) {
                         const AlignedBlock& aligned_block = colldata.block((BlockType)cmp, dpos);
@@ -4550,8 +4554,8 @@ bool prepare_for_next_image( void )
             qtables[ i ][ bpos ] = 0;
     }
 
-    // preset jpegtype
-    jpegtype  = 0;
+    // reset jpegtype
+    jpegtype = JPEG_TYPE::UNKNOWN;
 
     // reset padbit
     padbit = -1;
@@ -4614,7 +4618,7 @@ bool setup_imginfo_jpg(bool only_allocate_two_image_rows)
              ( cmpnfo[cmp].sfh == 0 ) ||
              ( cmpnfo[cmp].qtable == NULL ) ||
              ( cmpnfo[cmp].qtable[0] == 0 ) ||
-             ( jpegtype == 0 ) ) {
+             ( jpegtype == JPEG_TYPE::UNKNOWN ) ) {
             fprintf( stderr, "header information is incomplete" );
             errorlevel.store(2);
             return false;
@@ -4667,7 +4671,7 @@ bool setup_imginfo_jpg(bool only_allocate_two_image_rows)
         for ( cmp = 0; cmp < cmpc; cmp++ ) cmpnfo[ cmp ].sid = 0;
     }
     // alloc memory for further operations
-    if (!colldata.init(cmpnfo, cmpc, mcuh, mcuv, jpegtype == 1 && only_allocate_two_image_rows)) {
+    if (!colldata.init(cmpnfo, cmpc, mcuh, mcuv, jpegtype == JPEG_TYPE::BASELINE && only_allocate_two_image_rows)) {
         return false;
     }
     return true;
@@ -4814,9 +4818,9 @@ bool parse_jfif_jpg( unsigned char type, unsigned int len, unsigned int alloc_le
 
             // set JPEG coding type
             if ( type == 0xC2 )
-                jpegtype = 2;
+                jpegtype = JPEG_TYPE::PROGRESSIVE;
             else
-                jpegtype = 1;
+                jpegtype = JPEG_TYPE::BASELINE;
 
             // check data precision, only 8 bit is allowed
             lval = hpos < alloc_len ? segment[ hpos ]:0;
@@ -5767,7 +5771,7 @@ bool write_info( void )
 
     // info about image
     fprintf( fp, "<Infofile for JPEG image:>\n\n\n");
-    fprintf( fp, "coding process: %s\n", ( jpegtype == 1 ) ? "sequential" : "progressive" );
+    fprintf( fp, "coding process: %s\n", ( jpegtype == JPEG_TYPE::BASELINE ) ? "sequential" : "progressive" );
     // fprintf( fp, "no of scans: %i\n", scnc );
     fprintf( fp, "imageheight: %i / imagewidth: %i\n", imgheight, imgwidth );
     fprintf( fp, "component count: %i\n", cmpc );
