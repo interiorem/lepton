@@ -96,13 +96,13 @@ public:
         }
         void reserve(size_t new_reserved) {
             if (new_reserved > mReserved) {
-                mReserved = new_reserved;
-                uint8_t *new_begin = (uint8_t*)mAlloc.allocate(mReserved);
+                uint8_t *new_begin = (uint8_t*)mAlloc.allocate(new_reserved);
                 if (mBegin != NULL) {
                     memcpy(new_begin, mBegin, mSize);
-                    mAlloc.destroy(mBegin);
+                    mAlloc.deallocate(mBegin, mReserved);
                 }
                 mBegin = new_begin;
+                mReserved = new_reserved;
             }
         }
         void resize(size_t new_size) {
@@ -118,7 +118,6 @@ public:
         }
         ~ResizableByteBuffer() {
             if (mBegin) {
-                mAlloc.destroy(mBegin);
                 mAlloc.deallocate(mBegin, mReserved);
             }
         }
