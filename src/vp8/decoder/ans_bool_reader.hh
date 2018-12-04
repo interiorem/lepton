@@ -23,9 +23,6 @@ class ANSBoolReader {
                 if (mReader->eof()) {
                     break; // done with reading
                 }
-                if (mLastPacket.first){
-                    mReader->setFree(mLastPacket);
-                }
                 mLastPacket = mReader->getNext();
                 mLastPacketReadPtr = mLastPacket.first;
             }

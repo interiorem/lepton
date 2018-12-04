@@ -87,13 +87,11 @@ class ActualThreadPacketReader : public PacketReader{
     GenericWorker *worker;
     VP8ComponentDecoder_SendToActualThread *base;
     uint8_t stream_id;
-    ResizableByteBufferListNode* last;
 public:
     ActualThreadPacketReader(uint8_t stream_id, GenericWorker*worker, VP8ComponentDecoder_SendToActualThread*base) {
         this->worker = worker;
         this->stream_id = stream_id;
         this->base = base;
-        this->last = NULL;
     }
     // returns a buffer with at least sizeof(BD_VALUE) before it
     virtual ROBuffer getNext() {
@@ -114,7 +112,6 @@ public:
                 ResizableByteBufferListNode* lnode = (ResizableByteBufferListNode*) dat.data[i];
                 if (dat.count == 1 && lnode->stream_id == stream_id && lnode && lnode->size()) {
                     assert(stream_id == lnode->stream_id);
-                    last = lnode;
                     return {lnode->data(), lnode->data() + lnode->size()};
                 } else {
                     base->vbuffers[lnode->stream_id].push(lnode);
@@ -132,12 +129,6 @@ public:
     }
     bool eof()const {
         return isEof;
-    }
-    virtual void setFree(ROBuffer buffer) {// don't even bother
-        if (last && last->data() == buffer.first) {
-            delete last; // hax
-            last = NULL;
-        }
     }
     virtual ~ActualThreadPacketReader(){}
 };
