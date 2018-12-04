@@ -59,7 +59,6 @@ public:
     bool eof()const {
         return isEof;
     }
-    virtual void setFree(ROBuffer buffer) = 0;
     virtual ~PacketReader(){}
 };
 class TestPacketReader :public PacketReader{
@@ -88,7 +87,6 @@ public:
     bool eof()const {
         return isEof;
     }
-    void setFree(ROBuffer buffer){}
 };
 class BiRope {
 public:

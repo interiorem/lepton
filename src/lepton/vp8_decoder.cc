@@ -83,13 +83,11 @@ class VirtualThreadPacketReader : public PacketReader{
     VP8ComponentDecoder_SendToVirtualThread*base;
     uint8_t stream_id;
     Sirikata::MuxReader*mux_reader_;
-    Sirikata::MuxReader::ResizableByteBuffer * last;
 public:
     VirtualThreadPacketReader(uint8_t stream_id, Sirikata::MuxReader * mr, VP8ComponentDecoder_SendToVirtualThread*base) {
         this->base = base;
         this->stream_id = stream_id;
         this->mux_reader_ = mr;
-        last = NULL;
     }
     // returns a buffer with at least sizeof(BD_VALUE) before it
     virtual ROBuffer getNext() {
@@ -103,12 +101,6 @@ public:
     }
     bool eof()const {
         return isEof;
-    }
-    virtual void setFree(ROBuffer buffer) {// don't even bother
-        if (last && last->data() == buffer.first) {
-            delete last; // hax
-            last = NULL;
-        }
     }
     virtual ~VirtualThreadPacketReader(){}
 };
