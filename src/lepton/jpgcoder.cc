@@ -1628,6 +1628,52 @@ public:
 };
 
 
+// Depending on input file type (JPG/LEP), create encoder or decoder object
+// if one don't yet exists
+void create_coder()
+{
+    if (filetype == JPEG) {
+        if (ofiletype == LEPTON) {
+            if (!g_encoder) {
+                if (ujgversion == 3) {
+#ifdef ENABLE_ANS_EXPERIMENTAL
+                    g_encoder.reset(makeEncoder<ANSBoolReader>(g_threaded, g_threaded));
+#else
+                    always_assert(false&&"ANS-encoded file encountered but ANS not selected in build flags");
+#endif
+                } else {
+                    g_encoder.reset(makeEncoder<VPXBoolReader>(g_threaded, g_threaded));
+                }
+                TimingHarness::timing[0][TimingHarness::TS_MODEL_INIT] = TimingHarness::get_time_us();
+                g_decoder = NULL;
+            } else if (g_threaded && (action == socketserve || action == forkserve)) {
+                g_encoder->registerWorkers(get_worker_threads(NUM_THREADS - 1), NUM_THREADS  - 1);
+            }
+        } else if (ofiletype == UJG) {
+            g_encoder.reset(new SimpleComponentEncoder);
+            g_decoder = NULL;
+        }
+    } else if (filetype == LEPTON) {
+        execute(read_fixed_ujpg_header);
+        if (NUM_THREADS == 1) {
+            g_threaded = false; // with singlethreaded, doesn't make sense to split out reader/writer
+        }
+        if (!g_decoder) {
+            g_decoder = makeDecoder(g_threaded, g_threaded, ujgversion == 3);
+            TimingHarness::timing[0][TimingHarness::TS_MODEL_INIT] = TimingHarness::get_time_us();
+            g_reference_to_free.reset(g_decoder);
+        } else if (NUM_THREADS > 1 && g_threaded && (action == socketserve || action == forkserve)) {
+            g_decoder->registerWorkers(get_worker_threads(NUM_THREADS), NUM_THREADS);
+        }
+    } else if (filetype == UJG) {
+        execute(read_fixed_ujpg_header);
+        g_decoder = new SimpleComponentDecoder;
+        g_reference_to_free.reset(g_decoder);
+    }
+}
+
+
+// Encode or decode single file
 void process_file(IOUtil::FileReader* reader,
                   IOUtil::FileWriter *writer,
                   int max_file_size,
@@ -1800,45 +1846,8 @@ void process_file(IOUtil::FileReader* reader,
     check_file(fdin, fdout, max_file_size, force_zlib0, embedded_jpeg, header, is_socket);
     
     begin = clock();
-    if ( filetype == JPEG )
-    {
-        if (ofiletype == LEPTON) {
-            if (!g_encoder) {
-                if (ujgversion == 3) {
-#ifdef ENABLE_ANS_EXPERIMENTAL
-                    g_encoder.reset(makeEncoder<ANSBoolReader>(g_threaded, g_threaded));
-#else
-                    always_assert(false&&"ANS-encoded file encountered but ANS not selected in build flags");
-#endif
-                } else {
-                    g_encoder.reset(makeEncoder<VPXBoolReader>(g_threaded, g_threaded));
-                }
-                TimingHarness::timing[0][TimingHarness::TS_MODEL_INIT] = TimingHarness::get_time_us();
-                g_decoder = NULL;
-            } else if (g_threaded && (action == socketserve || action == forkserve)) {
-                g_encoder->registerWorkers(get_worker_threads(NUM_THREADS - 1), NUM_THREADS  - 1);
-            }
-        }else if (ofiletype == UJG) {
-            g_encoder.reset(new SimpleComponentEncoder);
-            g_decoder = NULL;
-        }
-    } else if (filetype == LEPTON) {
-        execute(read_fixed_ujpg_header);
-        if (NUM_THREADS == 1) {
-            g_threaded = false; // with singlethreaded, doesn't make sense to split out reader/writer
-        }
-        if (!g_decoder) {
-            g_decoder = makeDecoder(g_threaded, g_threaded, ujgversion == 3);
-            TimingHarness::timing[0][TimingHarness::TS_MODEL_INIT] = TimingHarness::get_time_us();
-            g_reference_to_free.reset(g_decoder);
-        } else if (NUM_THREADS > 1 && g_threaded && (action == socketserve || action == forkserve)) {
-            g_decoder->registerWorkers(get_worker_threads(NUM_THREADS), NUM_THREADS);
-        }
-    }else if (filetype == UJG) {
-        execute(read_fixed_ujpg_header);
-        g_decoder = new SimpleComponentDecoder;
-        g_reference_to_free.reset(g_decoder);
-    }
+    create_coder();
+    
 #ifndef _WIN32
     //FIXME
     if (g_time_bound_ms) {
