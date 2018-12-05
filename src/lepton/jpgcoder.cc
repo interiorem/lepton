@@ -1673,6 +1673,25 @@ void create_coder()
 }
 
 
+// Decode contents of LEP/UJG image file into original JPEG data
+void decode_image_stream()
+{
+    execute(read_ujpg); // replace with decompression function!
+    if (!g_cache_input_data) {
+        TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
+    }
+    if (!g_use_seccomp) {
+        read_done = clock();
+    }
+    TimingHarness::timing[0][TimingHarness::TS_JPEG_RECODE_STARTED] = TimingHarness::get_time_us();
+    if (filetype != UJG && !g_progressive_image) {
+        execute(recode_baseline_jpeg_wrapper);
+    } else {
+        execute(recode_jpeg);
+    }
+}
+
+
 // Encode or decode single file
 void process_file(IOUtil::FileReader* reader,
                   IOUtil::FileWriter *writer,
@@ -1992,19 +2011,9 @@ void process_file(IOUtil::FileReader* reader,
                         str_in = new Sirikata::CachingDecoderReader(str_in);
                         TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
                     }
-                    execute( read_ujpg ); // replace with decompression function!
-                    if (!g_cache_input_data)
-                        TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
-                        
-                    if (!g_use_seccomp) {
-                        read_done = clock();
-                    }
-                    TimingHarness::timing[0][TimingHarness::TS_JPEG_RECODE_STARTED] = TimingHarness::get_time_us();
-                    if (filetype != UJG && !g_progressive_image) {
-                        execute(recode_baseline_jpeg_wrapper);
-                    } else {
-                        execute(recode_jpeg);
-                    }
+
+                    decode_image_stream();
+
                     timing_operation_complete( 'd' );
                     TimingHarness::timing[0][TimingHarness::TS_JPEG_RECODE_FINISHED] = TimingHarness::get_time_us();
                     Sirikata::Array1d<uint8_t, 6> trailer_new_header;
