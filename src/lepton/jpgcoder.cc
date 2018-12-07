@@ -489,11 +489,12 @@ uint64_t g_time_bound_ms = 0;
 int g_inject_syscall_test = 0;
 bool g_force_zlib0_out = false;
 
-Sirikata::DecoderReader*    str_in      = NULL;    // input stream
-bounded_iostream*           str_out     = NULL;    // output stream
-// output stream
-IOUtil::FileWriter*         ujg_out     = NULL;
-IOUtil::FileReader*         ujg_base_in = NULL;
+// Pointers to input/output stream objects
+Sirikata::DecoderReader    *str_in      = NULL;     // input stream used only by decoder in read_ujpg()
+IOUtil::FileReader         *ujg_base_in = NULL;     // input stream used only once by decoder to call .getsize()
+IOUtil::FileWriter         *ujg_out     = NULL;     // output stream used only by encoder in write_ujpg()
+bounded_iostream           *str_out     = NULL;     // output stream used only by decoder in read_ujpg, recode_jpeg,
+                                                    //   merge_jpeg_streaming, recode_baseline_jpeg_wrapper
 
 const char** filelist = NULL;        // list of files to process
 int    file_cnt = 0;        // count of files in list (1 for input only)
