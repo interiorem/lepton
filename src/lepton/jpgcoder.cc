@@ -2433,22 +2433,18 @@ bool check_file(int fd_in, int fd_out, uint32_t max_file_size, bool force_zlib0,
         compressed_output = compressed_output || g_force_zlib0_out || force_zlib0;
         // file is UJG
         filetype = (( fileid[0] == ujg_header[0] ) && ( fileid[1] == ujg_header[1] ) ) ? UJG : LEPTON;
-        std::function<void(Sirikata::DecoderWriter*, size_t file_size)> known_size_callback = &nop;
         Sirikata::DecoderWriter * write_target = ujg_out;
         if (compressed_output) {
             Sirikata::Zlib0Writer * zwriter;
             if (uninit_g_zlib_0_writer) {
                 zwriter = new(uninit_g_zlib_0_writer)Sirikata::Zlib0Writer(ujg_out, 0);
                 uninit_g_zlib_0_writer = NULL;
-            }else {
+            } else {
                 zwriter = new Sirikata::Zlib0Writer(ujg_out, 0);
             }
-            known_size_callback = &nop;
             write_target = zwriter;
         }
-        str_out = new bounded_iostream( write_target,
-                                        known_size_callback,
-                                        Sirikata::JpegAllocator<uint8_t>());
+        str_out = new bounded_iostream( write_target, nop, Sirikata::JpegAllocator<uint8_t>());
         if ( str_out->chkerr() ) {
             fprintf( stderr, FWR_ERRMSG, filelist[file_no]);
             errorlevel.store(2);
