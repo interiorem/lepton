@@ -1541,47 +1541,38 @@ void read_input_file(Sirikata::DecoderReader *str_in, std::vector<uint8_t> &inpu
 }
 
 
-// Memory-caching implementation of ibytestream API
-class caching_ibytestream
+// Implementation of ibytestream API, using the provided std::vector
+// as input data stream
+class vector_ibytestream
 {
-    std::vector<uint8_t>    input_data;     // buffer holding entire stream contents
-    size_t                  input_pos;      // current reading position in the input_data
-    size_t                  bytes_before;   // how many bytes were read from the base_stream prior 
-                                            // to creating caching_ibytestream on top of it
+    const std::vector<uint8_t>  &buffer_;         // buffer holding entire stream contents
+    size_t                       position_;       // current reading position in the buffer_
+    Sirikata::FileSize           bytes_before_;   // number of bytes that were read from stream
+                                                  // prior to buffer contents
+
 public:
-    caching_ibytestream(ibytestream &base_stream)
-        : bytes_before(base_stream.getsize()),
-          input_pos(0)
+    vector_ibytestream(const std::vector<uint8_t> &buffer, size_t starting_position, Sirikata::FileSize bytes_before)
+        : buffer_(buffer),
+          position_(starting_position),
+          bytes_before_(bytes_before)
     {
-        // Read the entire input file into input_data[]
-        const size_t CHUNK_SIZE = 1024 * 1024;  // 1 MiB looks like a reasonable read chunk
-        size_t cursize = 0;
-        for(;;) {
-            input_data.resize(cursize + CHUNK_SIZE);
-            auto bytes = base_stream.read(input_data.data() + cursize, CHUNK_SIZE);
-            if (bytes <= 0)
-                break;
-            cursize += bytes;
-        }
-        input_data.resize(cursize);
     }
 
     // Read data into buffer and return amount of bytes read.
     // It could be less than requested if we reached EOF.
-    unsigned int read(uint8_t *output, unsigned int size)
-    {
+    unsigned int read(uint8_t *output, unsigned int size) {
         // reduce `size` if it requires reading past EOF
-        size = std::min(size_t(size), input_data.size() - input_pos);
-        memcpy(output, input_data.data() + input_pos, size);
-        input_pos += size;
+        size = std::min(size_t(size), buffer_.size() - position_);
+        memcpy(output, buffer_.data() + position_, size);
+        position_ += size;
         return size;
     }
 
     // Read a single byte into *output and return true.
     // Return false if we already reached EOF.
     bool read_byte(uint8_t *output) {
-        if (input_pos < input_data.size()) {
-            *output = input_data[input_pos++];
+        if (position_ < buffer_.size()) {
+            *output = buffer_[position_++];
             return true;
         } else {
             return false;
@@ -1590,23 +1581,20 @@ public:
 
     // Last byte read from the stream
     uint8_t get_last_read() const {
-        return input_pos > 0 ? input_data[input_pos - 1] : 0;
+        return position_ > 0 ? buffer_[position_ - 1] : 0;
     }
 
     // Byte preceding to the last byte read from the stream
     uint8_t get_penultimate_read() const {
-        return input_pos > 1 ? input_data[input_pos - 2] : 0;
+        return position_ > 1 ? buffer_[position_ - 2] : 0;
     }
 
-    unsigned int getsize() const {
-        // getsize() should return current read position in the entire file.
-        // This includes bytes read via caching_ibytestream::read*() so far
-        // plus bytes read from base_stream prior to creating 
-        // caching_ibytestream on top of it.
-        // bytes_before should be 2, since lepton reads first two bytes
+    // Current read position in stream (including bytes_before_)
+    Sirikata::FileSize getsize() const {
+        // bytes_before_ should be 2, since lepton reads first two bytes
         // initially in order to determine the filetype (JPG/LEP/other)
         // and choose the appropriate processing path.
-        return bytes_before + input_pos;
+        return bytes_before_ + position_;
     }
 };
 
@@ -1719,7 +1707,43 @@ void create_coder()
 }
 
 
-// Decode contents of LEP/UJG image file into original JPEG data
+// For the following 4 routines, i.e. (en|de)code_image*,
+// input stream should have 2 first bytes already consumed by filetype identification routine.
+// Decoding routines also require that fixed LEP/UJG file header was already consumed by read_fixed_ujpg_header().
+
+// Stream-to-stream JPEG->LEP encoding.
+template <class ibytestream_class>
+void encode_image_stream(ibytestream_class &input_stream, Sirikata::CountingWriter &output_stream)
+{
+    Sirikata::Array1d<uint8_t, 2> jpeg_file_header = {{0xFF, 0xD8}};
+    std::vector<std::pair<uint32_t, uint32_t> > huff_input_offset;
+    std::vector<ThreadHandoff> luma_row_offsets;
+
+    // Read Huffman data from JPEG file into buffers
+    execute(std::bind(read_jpeg<ibytestream_class>, &huff_input_offset, &input_stream, jpeg_file_header, embedded_jpeg));
+
+    // Decode Huffman-compressed data into raw image data
+    TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_STARTED] = TimingHarness::get_time_us();
+    execute(std::bind(decode_jpeg, huff_input_offset, &luma_row_offsets));
+    TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_FINISHED] = TimingHarness::get_time_us();
+
+    // Compress raw data into LEPTON format and write to stream
+    execute(std::bind(write_ujpg, &output_stream, std::move(luma_row_offsets), nullptr));
+}
+
+
+// Buffer-to-buffer JPEG->LEP encoding
+void encode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbuf) 
+{
+    // Wrap in/out buffers in stream classes suitable for encode_image_stream()
+    vector_ibytestream input_stream(inbuf, 0, 2 /* bytes were consumed before reading into inbuf */);
+    Sirikata::VectorWriter output_stream(outbuf);
+
+    encode_image_stream(input_stream, output_stream);
+}
+
+
+// Stream-to-stream LEP->JPEG decoding, exactly restoring contents of original JPEG file
 void decode_image_stream()
 {
     execute(read_ujpg); // replace with decompression function!
@@ -1989,6 +2013,7 @@ void process_file(IOUtil::FileReader* reader,
 
     if ( filetype == JPEG )
     {
+        unsigned int jpg_ident_offset = 2;
         std::vector<std::pair<uint32_t, uint32_t> > huff_input_offset;
         switch ( action )
         {
@@ -2001,24 +2026,27 @@ void process_file(IOUtil::FileReader* reader,
             case socketserve:
                 timing_operation_start( 'c' );
                 TimingHarness::timing[0][TimingHarness::TS_READ_STARTED] = TimingHarness::get_time_us();
+                if (g_cache_input_data && start_byte == 0)
                 {
+                    // Perform in-memory encoding from std::vector to std::vector
+
+                    // read input file into std::vector
+                    std::vector<uint8_t> inbuf, outbuf;
+                    read_input_file(str_in, inbuf);
+                    TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
+
+                    // encode vector->vector and write result into output file
+                    encode_image(inbuf,outbuf);
+                    ujg_out->Write(outbuf.data(), outbuf.size());    
+                }
+                else {                    
                     std::vector<uint8_t,
                                 Sirikata::JpegAllocator<uint8_t> > jpeg_file_raw_bytes;
-                    unsigned int jpg_ident_offset = 2;
                     if (start_byte == 0) {
                         ibytestream str_jpg_in(str_in,
                                                jpg_ident_offset,
                                                Sirikata::JpegAllocator<uint8_t>());
-                        
-                        if (g_cache_input_data) {
-                            // cache all data in memory before going to parse the JPEG
-                            caching_ibytestream caching_str_jpg_in(str_jpg_in);
-                            TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
-                            execute(std::bind(read_jpeg<caching_ibytestream>, &huff_input_offset, &caching_str_jpg_in, header, embedded_jpeg));
-                        } else {
-                            execute(std::bind(read_jpeg<ibytestream>, &huff_input_offset, &str_jpg_in, header, embedded_jpeg));
-                            TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
-                        }
+                        execute(std::bind(read_jpeg<ibytestream>, &huff_input_offset, &str_jpg_in, header, embedded_jpeg));
                     } else {
                         ibytestreamcopier str_jpg_in(str_in,
                                                      jpg_ident_offset,
@@ -2030,9 +2058,10 @@ void process_file(IOUtil::FileReader* reader,
                                           &huff_input_offset, &str_jpg_in, header,
                                           embedded_jpeg));
                         jpeg_file_raw_bytes.swap(str_jpg_in.mutate_read_data());
-                        TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
                     }
-                    TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_STARTED] = TimingHarness::get_time_us();
+                    TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] =
+                        TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_STARTED] = TimingHarness::get_time_us();
+
                     std::vector<ThreadHandoff> luma_row_offsets;
                     execute(std::bind(decode_jpeg, huff_input_offset, &luma_row_offsets));
                     TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_FINISHED] = TimingHarness::get_time_us();
@@ -2048,7 +2077,6 @@ void process_file(IOUtil::FileReader* reader,
 
             case info:
                 {
-                    unsigned int jpg_ident_offset = 2;
                     ibytestream str_jpg_in(str_in, jpg_ident_offset, Sirikata::JpegAllocator<uint8_t>());
                     execute(std::bind(read_jpeg<ibytestream>, &huff_input_offset, &str_jpg_in, header,
                                       embedded_jpeg));
