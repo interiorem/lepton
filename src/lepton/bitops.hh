@@ -408,12 +408,16 @@ private:
 
 
 /* -----------------------------------------------
-	class for input and output from file or memory
+     Input stream class caching 2 last bytes read from base stream.
+     Employed by JPEG decoding routine.
 	----------------------------------------------- */
 
 class ibytestream {
     Sirikata::DecoderReader* parent;
-    unsigned int bytes_read;
+    Sirikata::FileSize bytes_read;
+    // the biggest allowed huffman code (that may get damaged by truncation)
+    unsigned char last_read[2];
+
 public:
 	unsigned char get_last_read() const {
         return last_read[1];
@@ -424,30 +428,26 @@ public:
     ibytestream(Sirikata::DecoderReader *p,
                 unsigned int starting_byte_offset,
                 const Sirikata::JpegAllocator<uint8_t> &alloc);
-    unsigned int getsize() const {
+    Sirikata::FileSize getsize() const {
         return bytes_read;
     }
     bool read_byte(unsigned char *output);
     unsigned int read(unsigned char *output, unsigned int size);
-    // the biggest allowed huffman code (that may get damaged by truncation)
-    unsigned char last_read[2];
 };
-class ibytestreamcopier : ibytestream{ // since we don't use virtual methods... must reimplement
+
+
+/* -----------------------------------------------
+     ibytestream descendant keeping modifiable copy of data that were read
+	----------------------------------------------- */
+
+class ibytestreamcopier : public ibytestream {
     std::vector<uint8_t, Sirikata::JpegAllocator<uint8_t> > side_channel;
+
 public:
     ibytestreamcopier(Sirikata::DecoderReader *p,
                       unsigned int starting_byte_offset,
                       unsigned int maximum_file_size,
                       const Sirikata::JpegAllocator<uint8_t> &alloc);
-    unsigned int getsize() const {
-        return ibytestream::getsize();
-    }
-    unsigned int get_last_read() const {
-        return ibytestream::get_last_read();
-    }
-    unsigned int get_penultimate_read() const {
-        return ibytestream::get_penultimate_read();
-    }
 
     bool read_byte(unsigned char *output);
     unsigned int read(unsigned char *output, unsigned int size);
@@ -460,6 +460,11 @@ public:
         return side_channel;
     }
 };
+
+
+/* -----------------------------------------------
+    Output stream that limits number of bytes that can be written into underlying stream
+    ----------------------------------------------- */
 
 class bounded_iostream
 {
