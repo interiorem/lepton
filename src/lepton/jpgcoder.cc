@@ -1640,9 +1640,9 @@ public:
 };
 
 
-// Implementation of Sirikata::DecoderWriter API, saving all written data 
+// Implementation of Sirikata::CountingWriter API, saving all written data 
 // into the provided std::vector
-class VectorWriter : public DecoderWriter {
+class VectorWriter : public CountingWriter {
     std::vector<uint8_t> &buffer_;  // buffer holding entire stream contents
 
 public:
@@ -1657,6 +1657,11 @@ public:
         buffer_.resize(old_size + size);
         memcpy(buffer_.data() + old_size, data, size);
         return std::make_pair(uint32_t(size), JpegError::nil());
+    }
+
+    // Count of bytes written to buffer so far
+    Sirikata::FileSize getsize() override {
+        return buffer_.size();
     }
 
     void Close() override {
