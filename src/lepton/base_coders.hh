@@ -17,6 +17,7 @@ class SwitchableXZBase;
 class DecoderCompressionWriter;
 class DecoderReader;
 class DecoderWriter;
+class CountingWriter;
 template <class T> class SwitchableDecompressionReader;
 template <class T> class SwitchableCompressionWriter;
 }
@@ -58,8 +59,8 @@ class BaseEncoder {
     virtual void registerWorkers(GenericWorker * workers, unsigned int num_workers) = 0;
 
     virtual CodingReturnValue encode_chunk(const UncompressedComponents *input,
-                                           IOUtil::FileWriter *,
-                                           const ThreadHandoff * selected_splits,
+                                           Sirikata::CountingWriter *str_out,
+                                           const ThreadHandoff *selected_splits,
                                            unsigned int num_selected_splits) = 0;
     virtual size_t get_decode_model_memory_usage() const = 0;
     virtual size_t get_decode_model_worker_memory_usage() const = 0;

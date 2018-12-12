@@ -14,7 +14,7 @@ SimpleComponentEncoder::SimpleComponentEncoder() {
     memset(cur_read_batch, 0, sizeof(cur_read_batch));
 }
 CodingReturnValue SimpleComponentEncoder::encode_chunk(const UncompressedComponents *colldata,
-                                                       IOUtil::FileWriter *str_out,
+                                                       Sirikata::CountingWriter *str_out,
                                                        const ThreadHandoff *selected_splits,
                                                        unsigned int num_selected_splits)
 {

@@ -28,8 +28,7 @@ template<class BoolDecoder> class VP8ComponentEncoder : protected LeptonCodec<Bo
                                              (uint32_t)ColorChannel::NumBlockTypes> *num_nonzeros);
     bool mUseAnsEncoder;
     template<class BoolEncoder> void threaded_encode_inner(const UncompressedComponents * const colldata,
-                                                           IOUtil::FileWriter *str_out,
-                                                           const ThreadHandoff * selected_splits,
+                                                           const ThreadHandoff *selected_splits,
                                                            unsigned int num_selected_splits,
                                                            BoolEncoder bool_encoder[MAX_NUM_THREADS],
                                                            Sirikata::MuxReader::ResizableByteBuffer stream[Sirikata::MuxReader::MAX_STREAM_ID]);
@@ -43,14 +42,14 @@ public:
         return this->do_threading_;
     }
     CodingReturnValue vp8_full_encoder( const UncompressedComponents * const colldata,
-                                        IOUtil::FileWriter *,
-                                        const ThreadHandoff * selected_splits,
+                                        Sirikata::CountingWriter *str_out,
+                                        const ThreadHandoff *selected_splits,
                                         unsigned int num_selected_splits,
                                         bool use_ans_encoder);
 
     CodingReturnValue encode_chunk(const UncompressedComponents *input,
-                                   IOUtil::FileWriter *,
-                                   const ThreadHandoff * selected_splits,
+                                   Sirikata::CountingWriter *str_out,
+                                   const ThreadHandoff *selected_splits,
                                    unsigned int num_selected_splits);
     size_t get_decode_model_memory_usage() const {
         return this->model_memory_used();
