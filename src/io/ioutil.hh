@@ -34,6 +34,7 @@ inline Sirikata::uint32 ReadFull(Sirikata::DecoderReader * reader, void * vdata,
 }
 
 
+// Input stream reading data from provided file descriptor
 class FileReader : public Sirikata::DecoderReader {
     int fp;
     uint32_t total_read;
@@ -86,9 +87,12 @@ public:
         total_read += num_bytes;
     }
 };
-class FileWriter : public Sirikata::DecoderWriter {
+
+
+// Output stream writing data to provided file descriptor
+class FileWriter : public Sirikata::CountingWriter {
     int fp;
-    int total_written;
+    Sirikata::FileSize total_written;
     bool close_stream;
     bool is_fd_socket;
 public:
@@ -101,14 +105,14 @@ public:
     bool is_socket() const {
         return is_fd_socket;
     }
-    void Close() {
+    void Close() override {
         if (close_stream) {
           while (close(fp) == -1 && errno == EINTR){}
           // not always useful (eg during SECCOMP)
         }
         fp = -1;
     }
-    std::pair<Sirikata::uint32, Sirikata::JpegError> Write(const Sirikata::uint8*data, unsigned int size) {
+    std::pair<Sirikata::uint32, Sirikata::JpegError> Write(const Sirikata::uint8*data, unsigned int size) override {
         using namespace Sirikata;
                 size_t data_written = 0;
         while (data_written < size) {
@@ -125,13 +129,12 @@ public:
         total_written += size;
         return std::pair<Sirikata::uint32, JpegError>(size, JpegError::nil());
     }
-    size_t getsize() {
+    Sirikata::FileSize getsize() override {
         return total_written;
     }
     int get_fd() const {
         return fp;
     }
-
 };
 
 //SIRIKATA_FUNCTION_EXPORT FileReader * OpenFileOrPipe(const char * filename, int is_pipe, int max_size_read);
