@@ -32,16 +32,30 @@
 #include "Allocator.hh"
 #include "Error.hh"
 namespace Sirikata {
+
+// Type used for any value that may be as large as entire file
+typedef uint64_t FileSize;
+
+// Common API for all input streams
 class SIRIKATA_EXPORT DecoderReader {
 public:
     virtual std::pair<uint32, JpegError> Read(uint8*data, unsigned int size) = 0;
     virtual ~DecoderReader(){}
 };
+
+// Common API for all output streams
 class SIRIKATA_EXPORT DecoderWriter {
 public:
     virtual std::pair<uint32, JpegError> Write(const uint8*data, unsigned int size) = 0;
     virtual void Close() = 0;
     virtual ~DecoderWriter(){}
+};
+
+// API for output stream that counts how many bytes were already written
+class SIRIKATA_EXPORT CountingWriter : public DecoderWriter {
+public:
+    virtual FileSize getsize() = 0;  // count of bytes written to stream so far
+    virtual ~CountingWriter(){}
 };
 
 SIRIKATA_FUNCTION_EXPORT JpegError Copy(DecoderReader &r, DecoderWriter &w, const JpegAllocator<uint8> &alloc);
