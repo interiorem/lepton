@@ -6,11 +6,11 @@ class SimpleComponentEncoder : public BaseEncoder {
 public:
     SimpleComponentEncoder();
     CodingReturnValue encode_chunk(const UncompressedComponents *input,
-                                   IOUtil::FileWriter *,
-                                   const ThreadHandoff* selected_splits,
+                                   Sirikata::CountingWriter *str_out,
+                                   const ThreadHandoff *selected_splits,
                                    unsigned int num_selected_splits) ;
 
-    virtual void registerWorkers(GenericWorker*, unsigned int num_workers) {}
+    virtual void registerWorkers(GenericWorker *worker, unsigned int num_workers) {}
     ~SimpleComponentEncoder();
     size_t get_decode_model_memory_usage() const {
         return 0;

@@ -74,11 +74,11 @@ VP8ComponentEncoder<ArithmeticCoder>::VP8ComponentEncoder(bool do_threading, boo
 }
 template <class ArithmeticCoder>
 CodingReturnValue VP8ComponentEncoder<ArithmeticCoder>::encode_chunk(const UncompressedComponents *input,
-                                                                     IOUtil::FileWriter *output,
+                                                                     Sirikata::CountingWriter *str_out,
                                                                      const ThreadHandoff *selected_splits,
                                                                      unsigned int num_selected_splits)
 {
-    return vp8_full_encoder(input, output, selected_splits, num_selected_splits, this->mUseAnsEncoder);
+    return vp8_full_encoder(input, str_out, selected_splits, num_selected_splits, this->mUseAnsEncoder);
 }
 template <class ArithmeticCoder>
 template<class Left, class Middle, class Right, class BoolEncoder>
@@ -459,8 +459,7 @@ int model_file_fd = load_model_file_fd_output();
 
 template <class BoolDecoder>
 template<class BoolEncoder> void VP8ComponentEncoder<BoolDecoder>::threaded_encode_inner(const UncompressedComponents * const colldata,
-                                                                               IOUtil::FileWriter *str_out,
-                                                                               const ThreadHandoff * selected_splits,
+                                                                               const ThreadHandoff *selected_splits,
                                                                                unsigned int num_selected_splits,
                                                                                BoolEncoder bool_encoder[MAX_NUM_THREADS],
                                                                                ResizableByteBuffer stream[Sirikata::MuxReader::MAX_STREAM_ID]) {
@@ -520,8 +519,8 @@ template<class BoolEncoder> void VP8ComponentEncoder<BoolDecoder>::threaded_enco
 
 template<class BoolDecoder>
 CodingReturnValue VP8ComponentEncoder<BoolDecoder>::vp8_full_encoder(const UncompressedComponents * const colldata,
-                                                                     IOUtil::FileWriter *str_out,
-                                                                     const ThreadHandoff * selected_splits,
+                                                                     Sirikata::CountingWriter *str_out,
+                                                                     const ThreadHandoff *selected_splits,
                                                                      unsigned int num_selected_splits,
                                                                      bool use_ans_encoder)
 {
@@ -552,7 +551,6 @@ CodingReturnValue VP8ComponentEncoder<BoolDecoder>::vp8_full_encoder(const Uncom
 #ifdef ENABLE_ANS_EXPERIMENTAL
         ANSBoolWriter bool_encoder[MAX_NUM_THREADS];
         this->threaded_encode_inner(colldata,
-                                    str_out,
                                     selected_splits,
                                     num_selected_splits,
                                     bool_encoder,
@@ -564,7 +562,6 @@ CodingReturnValue VP8ComponentEncoder<BoolDecoder>::vp8_full_encoder(const Uncom
     
         VPXBoolWriter bool_encoder[MAX_NUM_THREADS];
         this->threaded_encode_inner(colldata,
-                                    str_out,
                                     selected_splits,
                                     num_selected_splits,
                                     bool_encoder,
