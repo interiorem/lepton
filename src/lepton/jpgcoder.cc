@@ -245,8 +245,9 @@ bool recode_jpeg( void );
 
 bool adapt_icos( void );
 bool check_value_range( void );
-bool write_ujpg(std::vector<ThreadHandoff> row_thread_handoffs,
-                std::vector<uint8_t, Sirikata::JpegAllocator<uint8_t> >*jpeg_file_raw_bytes);
+bool write_ujpg(Sirikata::CountingWriter *ujg_out,
+                std::vector<ThreadHandoff> row_thread_handoffs,
+                std::vector<uint8_t, Sirikata::JpegAllocator<uint8_t> > *jpeg_file_raw_bytes);
 bool read_ujpg( void );
 bool read_fixed_ujpg_header( void );
 bool prepare_for_next_image( void );
@@ -2033,11 +2034,12 @@ void process_file(IOUtil::FileReader* reader,
                     }
                     TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_STARTED] = TimingHarness::get_time_us();
                     std::vector<ThreadHandoff> luma_row_offsets;
-                    execute(std::bind(&decode_jpeg, huff_input_offset, &luma_row_offsets));
-                    TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_FINISHED]
-                        = TimingHarness::get_time_us();
+                    execute(std::bind(decode_jpeg, huff_input_offset, &luma_row_offsets));
+                    TimingHarness::timing[0][TimingHarness::TS_JPEG_DECODE_FINISHED] = TimingHarness::get_time_us();
+
                     //execute( check_value_range );
-                    execute(std::bind(&write_ujpg,
+                    execute(std::bind(write_ujpg,
+                                      ujg_out,
                                       std::move(luma_row_offsets),
                                       jpeg_file_raw_bytes.empty() ? NULL : &jpeg_file_raw_bytes));
                 }
@@ -3993,8 +3995,9 @@ public: bool operator() (const ThreadHandoff &a,
 /* -----------------------------------------------
     write uncompressed JPEG file
     ----------------------------------------------- */
-bool write_ujpg(std::vector<ThreadHandoff> row_thread_handoffs,
-                std::vector<uint8_t, Sirikata::JpegAllocator<uint8_t> >*jpeg_file_raw_bytes)
+bool write_ujpg(Sirikata::CountingWriter *ujg_out,
+                std::vector<ThreadHandoff> row_thread_handoffs,
+                std::vector<uint8_t, Sirikata::JpegAllocator<uint8_t> > *jpeg_file_raw_bytes)
 {
     unsigned char ujpg_mrk[ 64 ];
     bool has_lepton_entropy_coding = (ofiletype == LEPTON || filetype == LEPTON );
