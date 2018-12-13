@@ -517,8 +517,10 @@ FILE*  msgout   = stderr;    // stream for output of messages
 bool   pipe_on  = false;    // use stdin/stdout instead of filelist
 
 
-
+// Empty callback functions
+void nop(Sirikata::DecoderWriter*, size_t) {}
 void sig_nop(int){}
+
 /* -----------------------------------------------
     global variables: info about program
     ----------------------------------------------- */
@@ -1609,43 +1611,6 @@ public:
 
 
 namespace Sirikata {
-// Memory-caching implementation of Sirikata::DecoderReader API
-class CachingDecoderReader : public DecoderReader
-{
-    std::vector<uint8_t>    input_data;     // buffer holding entire stream contents
-    size_t                  input_pos;      // current reading position in the input_data
-
-public:
-    CachingDecoderReader(DecoderReader *base_stream)
-        : input_pos(0)
-    {
-        // Read the entire input file into input_data[]
-        const size_t CHUNK_SIZE = 1024 * 1024;  // 1 MiB looks like a reasonable read chunk
-        size_t cursize = 0;
-        for(;;) {
-            input_data.resize(cursize + CHUNK_SIZE);
-            auto bytes = IOUtil::ReadFull(base_stream, input_data.data() + cursize, CHUNK_SIZE);
-            if (bytes <= 0)
-                break;
-            cursize += bytes;
-        }
-        input_data.resize(cursize);
-    }  
-
-    // Read data into buffer and return amount of bytes read.
-    // It could be less than requested if we reached EOF.
-    std::pair<uint32_t, JpegError> Read(uint8_t *data, unsigned int size) override
-    {
-        // reduce `size` if it requires reading past EOF
-        size = std::min(size_t(size), input_data.size() - input_pos);
-        memcpy(data, input_data.data() + input_pos, size);
-        input_pos += size;
-        return std::make_pair(uint32_t(size),
-                              size == 0 ? JpegError::errEOF() : JpegError::nil());
-    }
-};
-
-
 // Implementation of Sirikata::DecoderReader API, using the provided std::vector
 // as input data stream
 class VectorReader : public DecoderReader {
@@ -1764,6 +1729,26 @@ void decode_image_stream()
     } else {
         execute(recode_jpeg);
     }
+}
+
+
+// Buffer-to-buffer LEP->JPEG decoding
+void decode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbuf) 
+{
+    auto saved_str_in = str_in;
+    auto saved_str_out = str_out;
+
+    Sirikata::VectorReader input_stream(inbuf);
+    Sirikata::VectorWriter output_stream(outbuf);
+    bounded_iostream bounded_outstream(&output_stream, &nop, Sirikata::JpegAllocator<uint8_t>());
+
+    str_in = &input_stream;
+    str_out = &bounded_outstream;
+    decode_image_stream();
+    bounded_outstream.flush();
+
+    str_in = saved_str_in;
+    str_out = saved_str_out;
 }
 
 
@@ -2082,12 +2067,19 @@ void process_file(IOUtil::FileReader* reader,
                 while (true) {
 
                     if (g_cache_input_data) {
-                        // cache all data in memory before going to parse the JPEG
-                        str_in = new Sirikata::CachingDecoderReader(str_in);
-                        TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
-                    }
+                        // Perform in-memory decoding from std::vector to std::vector
 
-                    decode_image_stream();
+                        // read input file into std::vector
+                        std::vector<uint8_t> inbuf, outbuf;
+                        read_input_file(str_in, inbuf);
+                        TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
+
+                        // decode vector->vector and write result into output file
+                        decode_image(inbuf, outbuf);
+                        str_out->write(outbuf.data(), outbuf.size());    
+                    } else {
+                        decode_image_stream();
+                    }
 
                     timing_operation_complete( 'd' );
                     TimingHarness::timing[0][TimingHarness::TS_JPEG_RECODE_FINISHED] = TimingHarness::get_time_us();
@@ -2360,14 +2352,6 @@ void show_help( void )
 /* ----------------------- End of main interface functions -------------------------- */
 
 /* ----------------------- Begin of main functions -------------------------- */
-
-
-void nop (Sirikata::DecoderWriter*w, size_t) {
-}
-
-//void static_cast_to_zlib_and_call (Sirikata::DecoderWriter*w, size_t size) {
-//    (static_cast<Sirikata::Zlib0Writer*>(w))->setFullFileSize(size);
-//}
 
 
 /* -----------------------------------------------
