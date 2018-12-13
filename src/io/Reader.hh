@@ -51,6 +51,13 @@ public:
     virtual ~DecoderWriter(){}
 };
 
+// API for input stream that counts how many bytes were already read
+class SIRIKATA_EXPORT CountingReader : public DecoderReader {
+public:
+    virtual FileSize getsize() = 0;  // count of bytes read from stream so far
+    virtual ~CountingReader(){}
+};
+
 // API for output stream that counts how many bytes were already written
 class SIRIKATA_EXPORT CountingWriter : public DecoderWriter {
 public:
