@@ -1602,9 +1602,9 @@ public:
 
 
 namespace Sirikata {
-// Implementation of Sirikata::DecoderReader API, using the provided std::vector
+// Implementation of Sirikata::CountingReader API, using the provided std::vector
 // as input data stream
-class VectorReader : public DecoderReader {
+class VectorReader : public CountingReader {
     const std::vector<uint8_t> &buffer_;    // buffer holding entire stream contents
     size_t                      position_;  // current reading position in the buffer
 
@@ -1624,6 +1624,11 @@ public:
         position_ += size;
         return std::make_pair(uint32_t(size),
                               size == 0 ? JpegError::errEOF() : JpegError::nil());
+    }
+
+    // Count of bytes read from buffer so far
+    Sirikata::FileSize getsize() override {
+        return position_;
     }
 
     ~VectorReader() {
