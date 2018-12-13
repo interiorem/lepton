@@ -241,14 +241,14 @@ struct MergeJpegProgress;
 bool decode_jpeg(const std::vector<std::pair<uint32_t,
                                    uint32_t> > &huff_input_offset,
                  std::vector<ThreadHandoff>*row_thread_handoffs);
-bool recode_jpeg(bounded_iostream *str_out);
+bool recode_jpeg(Sirikata::CountingReader *str_in, bounded_iostream *str_out);
 
 bool adapt_icos( void );
 bool check_value_range( void );
 bool write_ujpg(Sirikata::CountingWriter *ujg_out,
                 std::vector<ThreadHandoff> row_thread_handoffs,
                 std::vector<uint8_t, Sirikata::JpegAllocator<uint8_t> > *jpeg_file_raw_bytes);
-bool read_ujpg(bounded_iostream *str_out);
+bool read_ujpg(Sirikata::DecoderReader *str_in, bounded_iostream *str_out);
 bool read_fixed_ujpg_header( void );
 bool prepare_for_next_image( void );
 
@@ -1341,20 +1341,18 @@ void test_syscall_injection(std::atomic<int>*value) {
 #endif
 }
 
-bool recode_baseline_jpeg_wrapper(bounded_iostream *str_out)
+bool recode_baseline_jpeg_wrapper(Sirikata::CountingReader *str_in, bounded_iostream *str_out)
 {
     bool retval = recode_baseline_jpeg(str_out, max_file_size);
     if (!retval) {
         errorlevel.store(2);
         return retval;
     }
-    // get filesize
+    
+    // get sizes of input & output files
+    ujgfilesize = str_in->getsize();
     jpgfilesize = str_out->getsize();
-    if (ujg_base_in) {
-        ujgfilesize = ujg_base_in->getsize();
-    } else {
-        ujgfilesize = 4096 * 1024;
-    }
+    
 #ifndef _WIN32
     if (!g_use_seccomp) {
         clock_t final = clock();
@@ -1751,9 +1749,9 @@ void encode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbu
 
 
 // Stream-to-stream LEP->JPEG decoding, exactly restoring contents of original JPEG file
-void decode_image_stream(bounded_iostream *str_out)
+void decode_image_stream(Sirikata::CountingReader *str_in, bounded_iostream *str_out)
 {
-    execute(std::bind(read_ujpg, str_out));  // replace with decompression function!
+    execute(std::bind(read_ujpg, str_in, str_out));  // replace with decompression function!
     if (!g_cache_input_data) {
         TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
     }
@@ -1762,9 +1760,9 @@ void decode_image_stream(bounded_iostream *str_out)
     }
     TimingHarness::timing[0][TimingHarness::TS_JPEG_RECODE_STARTED] = TimingHarness::get_time_us();
     if (filetype != UJG && !g_progressive_image) {
-        execute(std::bind(recode_baseline_jpeg_wrapper, str_out));
+        execute(std::bind(recode_baseline_jpeg_wrapper, str_in, str_out));
     } else {
-        execute(std::bind(recode_jpeg, str_out));
+        execute(std::bind(recode_jpeg, str_in, str_out));
     }
 }
 
@@ -1772,15 +1770,13 @@ void decode_image_stream(bounded_iostream *str_out)
 // Buffer-to-buffer LEP->JPEG decoding
 void decode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbuf) 
 {
-    auto saved_str_in = str_in;
+    // Create streams reading data from inbuf and writing output to outbuf
     Sirikata::VectorReader input_stream(inbuf);
     Sirikata::VectorWriter output_stream(outbuf);
     bounded_iostream bounded_outstream(&output_stream, &nop, Sirikata::JpegAllocator<uint8_t>());
 
-    str_in = &input_stream;
-    decode_image_stream(&bounded_outstream);
+    decode_image_stream(&input_stream, &bounded_outstream);
     bounded_outstream.flush();
-    str_in = saved_str_in;
 }
 
 
@@ -2115,7 +2111,7 @@ void process_file(IOUtil::FileReader* reader,
                         decode_image(inbuf, outbuf);
                         str_out->write(outbuf.data(), outbuf.size());    
                     } else {
-                        decode_image_stream(str_out);
+                        decode_image_stream(ujg_base_in, str_out);
                     }
 
                     timing_operation_complete( 'd' );
@@ -2147,7 +2143,7 @@ void process_file(IOUtil::FileReader* reader,
                 str_out->close();
                 break;
             case info:
-                execute(std::bind(read_ujpg, str_out));
+                execute(std::bind(read_ujpg, str_in, str_out));
                 execute( write_info );
                 break;
         }
@@ -2819,7 +2815,8 @@ ThreadHandoff crystallize_thread_handoff(abitreader *reader,
     return retval;
 }
 
-MergeJpegStreamingStatus merge_jpeg_streaming(bounded_iostream *str_out,
+MergeJpegStreamingStatus merge_jpeg_streaming(Sirikata::CountingReader *str_in,
+                                              bounded_iostream *str_out,
                                               MergeJpegProgress *stored_progress,
                                               const unsigned char *local_huff_data,
                                               unsigned int max_byte_coded,
@@ -3009,15 +3006,11 @@ MergeJpegStreamingStatus merge_jpeg_streaming(bounded_iostream *str_out,
         errorlevel.store(2);
         return STREAMING_ERROR;
     }
-    // get filesize
 
+    // get sizes of input & output files
+    ujgfilesize = str_in->getsize();
     jpgfilesize = str_out->getsize();
-    // get filesize
-    if (ujg_base_in) {
-        ujgfilesize = ujg_base_in->getsize();
-    } else {
-        ujgfilesize = 4096 * 1024;
-    }
+
 #ifndef _WIN32
     //FIXME
     if (!g_use_seccomp) {
@@ -3579,7 +3572,7 @@ bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> > & huff_input_
     JPEG encoding routine
     ----------------------------------------------- */
 
-bool recode_jpeg(bounded_iostream *str_out)
+bool recode_jpeg(Sirikata::CountingReader *str_in, bounded_iostream *str_out)
 {
     if (!g_use_seccomp) {
         pre_byte = clock();
@@ -3723,7 +3716,7 @@ bool recode_jpeg(bounded_iostream *str_out)
                         if ( eob < 0 ) sta = -1;
                         else sta = next_mcupos( &mcu, &cmp, &csc, &sub, &dpos, &rstw, cs_cmpc);
                         if (sta == 0 && huffw.no_remainder()) {
-                            merge_jpeg_streaming(str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
+                            merge_jpeg_streaming(str_in, str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                         }
                         if (str_out->has_exceeded_bound()) {
                             sta = 2;
@@ -3748,7 +3741,7 @@ bool recode_jpeg(bounded_iostream *str_out)
                         if ( sta != -1 )
                             sta = next_mcupos( &mcu, &cmp, &csc, &sub, &dpos, &rstw, cs_cmpc);
                         if (sta == 0 && huffw.no_remainder()) {
-                            merge_jpeg_streaming(str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
+                            merge_jpeg_streaming(str_in, str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                         }
                         if (str_out->has_exceeded_bound()) {
                             sta = 2;
@@ -3769,7 +3762,7 @@ bool recode_jpeg(bounded_iostream *str_out)
                         if ( sta != -1 )
                             sta = next_mcupos( &mcu, &cmp, &csc, &sub, &dpos, &rstw, cs_cmpc);
                         if (sta == 0 && huffw.no_remainder()) {
-                            merge_jpeg_streaming(str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
+                            merge_jpeg_streaming(str_in, str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                         }
                         if (str_out->has_exceeded_bound()) {
                             sta = 2;
@@ -3803,7 +3796,7 @@ bool recode_jpeg(bounded_iostream *str_out)
                         if ( eob < 0 ) sta = -1;
                         else sta = next_mcuposn( &cmp, &dpos, &rstw);
                         if (sta == 0 && huffw.no_remainder()) {
-                            merge_jpeg_streaming(str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
+                            merge_jpeg_streaming(str_in, str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                         }
                         if (str_out->has_exceeded_bound()) {
                             sta = 2;
@@ -3830,7 +3823,7 @@ bool recode_jpeg(bounded_iostream *str_out)
                             if ( sta != -1 )
                                 sta = next_mcuposn( &cmp, &dpos, &rstw );
                             if (sta == 0 && huffw.no_remainder()) {
-                                merge_jpeg_streaming(str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
+                                merge_jpeg_streaming(str_in, str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                             }
                             if (str_out->has_exceeded_bound()) {
                                 sta = 2;
@@ -3877,7 +3870,7 @@ bool recode_jpeg(bounded_iostream *str_out)
                             if ( eob < 0 ) sta = -1;
                             else sta = next_mcuposn( &cmp, &dpos, &rstw );
                             if (sta == 0 && huffw.no_remainder()) {
-                                merge_jpeg_streaming(str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
+                                merge_jpeg_streaming(str_in, str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                             }
                             if (str_out->has_exceeded_bound()) {
                                 sta = 2;
@@ -3910,7 +3903,7 @@ bool recode_jpeg(bounded_iostream *str_out)
                             if ( eob < 0 ) sta = -1;
                             else sta = next_mcuposn( &cmp, &dpos, &rstw );
                             if (sta == 0 && huffw.no_remainder()) {
-                                merge_jpeg_streaming(str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
+                                merge_jpeg_streaming(str_in, str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
                             }
                             if (str_out->has_exceeded_bound()) {
                                 sta = 2;
@@ -3950,7 +3943,7 @@ bool recode_jpeg(bounded_iostream *str_out)
             huffw.flush_no_pad();
             dev_assert(huffw.no_remainder() && "this should have been padded");
             if (huffw.no_remainder()) {
-                merge_jpeg_streaming(str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
+                merge_jpeg_streaming(str_in, str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), false);
             }
         }
     }
@@ -3964,7 +3957,7 @@ bool recode_jpeg(bounded_iostream *str_out)
 
     // check for errors, proceed if no error encountered
     always_assert(huffw.no_remainder() && "this should have been padded");
-    merge_jpeg_streaming(str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), true);
+    merge_jpeg_streaming(str_in, str_out, &streaming_progress, huffw.peekptr(), huffw.getpos(), true);
     // store last scan & restart positions
     scnp.at(scnc) = hufs;
     if ( !rstp.empty() )
@@ -4364,7 +4357,7 @@ void* mem_realloc_nop(void * ptr, size_t size, size_t *actualSize, unsigned int 
 
 Sirikata::MemReadWriter *header_reader = NULL;
 
-bool read_ujpg(bounded_iostream *str_out)
+bool read_ujpg(Sirikata::DecoderReader *str_in, bounded_iostream *str_out)
 {
     using namespace IOUtil;
     using namespace Sirikata;
