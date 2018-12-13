@@ -1520,6 +1520,24 @@ int open_fdout(const char *ifilename,
 
 void concatenate_files(int fdint, int fdout);
 
+
+// Read the entire input stream contents into std::vector
+void read_input_file(Sirikata::DecoderReader *str_in, std::vector<uint8_t> &input_data)
+{
+    const size_t CHUNK_SIZE = 1024 * 1024;  // 1 MiB looks like a reasonable read chunk
+    size_t cursize = 0;
+    for(;;) {
+        input_data.resize(cursize + CHUNK_SIZE);
+        auto bytes = IOUtil::ReadFull(str_in, input_data.data() + cursize, CHUNK_SIZE);
+        if (bytes > 0)
+            cursize += bytes;
+        if (bytes < CHUNK_SIZE)
+            break;
+    }
+    input_data.resize(cursize);
+}
+
+
 // Memory-caching implementation of ibytestream API
 class caching_ibytestream
 {
