@@ -15,9 +15,10 @@
 #include "component_info.hh"
 #include "../vp8/model/color_context.hh"
 #include "../vp8/util/block_based_image.hh"
-struct componentInfo;
 
+struct componentInfo;
 class Block;
+class bounded_iostream;
 
 
 
@@ -284,7 +285,7 @@ public:
     // these are the only functions able to access the components
     friend bool decode_jpeg(const std::vector<std::pair<uint32_t, uint32_t> >&huff_byte_offsets,
                             std::vector<ThreadHandoff>*luma_row_offset_return);
-    friend bool recode_jpeg(void);
+    friend bool recode_jpeg(bounded_iostream *str_out);
     friend bool check_value_range(void);
 private:
     AlignedBlock& mutable_block(BlockType cmp, int dpos) {
