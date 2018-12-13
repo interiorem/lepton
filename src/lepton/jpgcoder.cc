@@ -1673,6 +1673,33 @@ public:
     ~VectorReader() {
     }
 };
+
+
+// Implementation of Sirikata::DecoderWriter API, saving all written data 
+// into the provided std::vector
+class VectorWriter : public DecoderWriter {
+    std::vector<uint8_t> &buffer_;  // buffer holding entire stream contents
+
+public:
+    VectorWriter(std::vector<uint8_t> &buffer)
+        : buffer_(buffer)
+    {
+        buffer_.clear();
+    }
+
+    std::pair<uint32, JpegError> Write(const uint8_t *data, unsigned int size) override {
+        auto old_size = buffer_.size();
+        buffer_.resize(old_size + size);
+        memcpy(buffer_.data() + old_size, data, size);
+        return std::make_pair(uint32_t(size), JpegError::nil());
+    }
+
+    void Close() override {
+    }
+
+    ~VectorWriter() {
+    }
+};
 };
 
 
