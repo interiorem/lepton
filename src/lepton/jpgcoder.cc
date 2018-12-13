@@ -1644,6 +1644,35 @@ public:
                               size == 0 ? JpegError::errEOF() : JpegError::nil());
     }
 };
+
+
+// Implementation of Sirikata::DecoderReader API, using the provided std::vector
+// as input data stream
+class VectorReader : public DecoderReader {
+    const std::vector<uint8_t> &buffer_;    // buffer holding entire stream contents
+    size_t                      position_;  // current reading position in the buffer
+
+public:
+    VectorReader(const std::vector<uint8_t> &buffer)
+        : buffer_(buffer),
+          position_(0)
+    {
+    }
+
+    // Read data into provided buffer data[], returning number of bytes read.
+    // It could be less than requested if we reached EOF.
+    std::pair<uint32_t, JpegError> Read(uint8_t *data, unsigned int size) override {
+        // reduce `size` if it requires reading past EOF
+        size = std::min(size_t(size), buffer_.size() - position_);
+        memcpy(data, buffer_.data() + position_, size);
+        position_ += size;
+        return std::make_pair(uint32_t(size),
+                              size == 0 ? JpegError::errEOF() : JpegError::nil());
+    }
+
+    ~VectorReader() {
+    }
+};
 };
 
 
