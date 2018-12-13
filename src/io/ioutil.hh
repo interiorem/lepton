@@ -35,22 +35,23 @@ inline Sirikata::uint32 ReadFull(Sirikata::DecoderReader * reader, void * vdata,
 
 
 // Input stream reading data from provided file descriptor
-class FileReader : public Sirikata::DecoderReader {
+class FileReader : public Sirikata::CountingReader {
     int fp;
-    uint32_t total_read;
-    uint32_t max_read;
+    Sirikata::FileSize total_read;
+    Sirikata::FileSize max_read;
     bool is_fd_socket;
+
 public:
-    FileReader(int ff, int max_read_allowed, bool is_socket) {
+    FileReader(int ff, Sirikata::FileSize max_read_allowed, bool is_socket) {
         fp = ff;
         this->is_fd_socket = is_socket;
         total_read = 0;
         max_read = max_read_allowed;
     }
-    bool is_socket()const {
+    bool is_socket() const {
         return is_fd_socket;
     }
-    std::pair<Sirikata::uint32, Sirikata::JpegError> Read(Sirikata::uint8*data, unsigned int size) {
+    std::pair<Sirikata::uint32, Sirikata::JpegError> Read(Sirikata::uint8 *data, unsigned int size) override {
         if (max_read && total_read + size > max_read) {
             size = max_read - total_read;
             if (size == 0) {
@@ -74,16 +75,16 @@ public:
     unsigned int bound() const {
         return max_read;
     }
-    size_t length() {
+    Sirikata::FileSize length() {
         return total_read;
     }
-    size_t getsize() {
+    Sirikata::FileSize getsize() override {
         return total_read;
     }
     int get_fd() const {
         return fp;
     }
-    void mark_some_bytes_already_read(uint32_t num_bytes) {
+    void mark_some_bytes_already_read(Sirikata::FileSize num_bytes) {
         total_read += num_bytes;
     }
 };
@@ -95,6 +96,7 @@ class FileWriter : public Sirikata::CountingWriter {
     Sirikata::FileSize total_written;
     bool close_stream;
     bool is_fd_socket;
+
 public:
     FileWriter(int ff, bool do_close_stream, bool is_fd_socket) {
         this->is_fd_socket = is_fd_socket;
