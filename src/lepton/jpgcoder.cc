@@ -1710,13 +1710,17 @@ void create_coder()
 }
 
 
-// For the following 4 routines, i.e. (en|de)code_image*,
-// input stream should have 2 first bytes already consumed by filetype identification routine.
-// Decoding routines also require that fixed LEP/UJG file header was already consumed by read_fixed_ujpg_header().
+//////////////////////////////////////////////////////////////////////////////////////////
+// Stream->stream and buffer->buffer (de)compression functions processing
+// JPEG/LEPTON files without 2 header bytes, and without 22-byte fixed LEPTON file header.
+// In the processing pipeline, these bytes should be already consumed by calls to 
+// check_file() and read_fixed_ujpg_header().
+//////////////////////////////////////////////////////////////////////////////////////////
+
 
 // Stream-to-stream JPEG->LEP encoding.
 template <class ibytestream_class>
-void encode_image_stream(ibytestream_class &input_stream, Sirikata::CountingWriter &output_stream)
+void prepared_encode_image_stream(ibytestream_class &input_stream, Sirikata::CountingWriter &output_stream)
 {
     Sirikata::Array1d<uint8_t, 2> jpeg_file_header = {{0xFF, 0xD8}};
     std::vector<std::pair<uint32_t, uint32_t> > huff_input_offset;
@@ -1736,18 +1740,18 @@ void encode_image_stream(ibytestream_class &input_stream, Sirikata::CountingWrit
 
 
 // Buffer-to-buffer JPEG->LEP encoding
-void encode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbuf) 
+void prepared_encode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbuf) 
 {
-    // Wrap in/out buffers in stream classes suitable for encode_image_stream()
+    // Wrap in/out buffers in stream classes suitable for prepared_encode_image_stream()
     vector_ibytestream input_stream(inbuf, 0, 2 /* bytes were consumed before reading into inbuf */);
     Sirikata::VectorWriter output_stream(outbuf);
 
-    encode_image_stream(input_stream, output_stream);
+    prepared_encode_image_stream(input_stream, output_stream);
 }
 
 
 // Stream-to-stream LEP->JPEG decoding, exactly restoring contents of original JPEG file
-void decode_image_stream(Sirikata::CountingReader *str_in, bounded_iostream *str_out)
+void prepared_decode_image_stream(Sirikata::CountingReader *str_in, bounded_iostream *str_out)
 {
     execute(std::bind(read_ujpg, str_in, str_out));  // replace with decompression function!
     if (!g_cache_input_data) {
@@ -1766,14 +1770,14 @@ void decode_image_stream(Sirikata::CountingReader *str_in, bounded_iostream *str
 
 
 // Buffer-to-buffer LEP->JPEG decoding
-void decode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbuf) 
+void prepared_decode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbuf) 
 {
     // Create streams reading data from inbuf and writing output to outbuf
     Sirikata::VectorReader input_stream(inbuf);
     Sirikata::VectorWriter output_stream(outbuf);
     bounded_iostream bounded_outstream(&output_stream, &nop, Sirikata::JpegAllocator<uint8_t>());
 
-    decode_image_stream(&input_stream, &bounded_outstream);
+    prepared_decode_image_stream(&input_stream, &bounded_outstream);
     bounded_outstream.flush();
 }
 
@@ -2039,7 +2043,7 @@ void process_file(IOUtil::FileReader* reader,
                     TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
 
                     // encode vector->vector and write result into output file
-                    encode_image(inbuf,outbuf);
+                    prepared_encode_image(inbuf,outbuf);
                     ujg_out->Write(outbuf.data(), outbuf.size());    
                 }
                 else {                    
@@ -2113,10 +2117,10 @@ void process_file(IOUtil::FileReader* reader,
                         TimingHarness::timing[0][TimingHarness::TS_READ_FINISHED] = TimingHarness::get_time_us();
 
                         // decode vector->vector and write result into output file
-                        decode_image(inbuf, outbuf);
+                        prepared_decode_image(inbuf, outbuf);
                         str_out->write(outbuf.data(), outbuf.size());    
                     } else {
-                        decode_image_stream(ujg_base_in, str_out);
+                        prepared_decode_image_stream(ujg_base_in, str_out);
                     }
 
                     timing_operation_complete( 'd' );
