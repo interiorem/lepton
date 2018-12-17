@@ -249,7 +249,7 @@ bool write_ujpg(Sirikata::CountingWriter *ujg_out,
                 std::vector<ThreadHandoff> row_thread_handoffs,
                 std::vector<uint8_t, Sirikata::JpegAllocator<uint8_t> > *jpeg_file_raw_bytes);
 bool read_ujpg(Sirikata::DecoderReader *str_in, bounded_iostream *str_out);
-bool read_fixed_ujpg_header( void );
+bool read_fixed_ujpg_header(Sirikata::DecoderReader *str_in);
 bool prepare_for_next_image( void );
 
 
@@ -1693,7 +1693,6 @@ void create_coder()
             g_decoder = NULL;
         }
     } else if (filetype == LEPTON) {
-        execute(read_fixed_ujpg_header);
         if (NUM_THREADS == 1) {
             g_threaded = false; // with singlethreaded, doesn't make sense to split out reader/writer
         }
@@ -1705,7 +1704,6 @@ void create_coder()
             g_decoder->registerWorkers(get_worker_threads(NUM_THREADS), NUM_THREADS);
         }
     } else if (filetype == UJG) {
-        execute(read_fixed_ujpg_header);
         g_decoder = new SimpleComponentDecoder;
         g_reference_to_free.reset(g_decoder);
     }
@@ -1949,12 +1947,19 @@ void process_file(IOUtil::FileReader* reader,
         concatenate_files(fdin, fdout);
         goto close_files;
     }
+
+    begin = clock();
+
     // check input file and determine filetype
     check_file(fdin, fdout, max_file_size, force_zlib0, embedded_jpeg, header, is_socket);
-    
-    begin = clock();
+
+    // read LEPTON file header to determine how much threads to use
+    if (filetype == LEPTON || filetype == UJG) {
+        execute(std::bind(read_fixed_ujpg_header, str_in));
+    }
+
     create_coder();
-    
+
 #ifndef _WIN32
     //FIXME
     if (g_time_bound_ms) {
@@ -2136,7 +2141,7 @@ void process_file(IOUtil::FileReader* reader,
                         // first image it's also read before calling read_ujpg()
                         prepare_for_next_image();
                         r_bitcount = 0;
-                        execute(read_fixed_ujpg_header);
+                        execute(std::bind(read_fixed_ujpg_header, str_in));
                         str_out->prepare_for_next_image();
                     }
                 }
@@ -2390,7 +2395,7 @@ void show_help( void )
 /* -----------------------------------------------
     check file and determine filetype
     ----------------------------------------------- */
-bool read_fixed_ujpg_header() {
+bool read_fixed_ujpg_header(Sirikata::DecoderReader *str_in) {
     Sirikata::Array1d<unsigned char, 22> header;
     header.memset(0);
 
