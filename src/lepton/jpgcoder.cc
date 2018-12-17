@@ -103,6 +103,7 @@ bool g_permissive       = false;
 bool fast_exit          = false;  // skip freeing memory buffers and closing files (as result, memory usage grows while multiple files are processed)
 bool g_no_output_option = false;  // redirect output to null
 bool g_cache_input_data = false;  // read entire input file into buffer before going to process the data
+bool g_buffer_data      = false;  // process entire file via encode_image or decode_image function
 #ifdef SKIP_VALIDATION
 bool g_skip_validation = true;
 #else
@@ -251,6 +252,8 @@ bool write_ujpg(Sirikata::CountingWriter *ujg_out,
 bool read_ujpg(Sirikata::DecoderReader *str_in, bounded_iostream *str_out);
 bool read_fixed_ujpg_header(Sirikata::DecoderReader *str_in);
 bool prepare_for_next_image( void );
+// Encode or decode file using encode_image or decode_image function
+void process_file_using_buffer(const char *filename);
 
 
 /* -----------------------------------------------
@@ -923,6 +926,17 @@ int app_main( int argc, char** argv )
     }
 
 
+    // Special processing for option -buf
+    if (g_buffer_data)
+    {
+        // process each input file
+        for (int i = 0; i < file_cnt; i++) {
+            process_file_using_buffer(filelist[i]);
+        }
+        return 0;
+    }
+    
+
     begin = clock();
 
     // process each input file
@@ -1097,7 +1111,9 @@ int initialize_options( int argc, const char*const * argv )
         } else if ( strcmp((*argv), "-nul") == 0 ) {
             g_no_output_option = true;
         } else if ( strcmp((*argv), "-cache") == 0 ) {
-            g_cache_input_data = true;            
+            g_cache_input_data = true;
+        } else if ( strcmp((*argv), "-buf") == 0 ) {
+            g_buffer_data = true;
         } else if ( strcmp((*argv), "-skipvalidation") == 0 ) {
             g_skip_validation = true;
         } else if ( strcmp((*argv), "-skipvalidate") == 0 ) {
@@ -1541,6 +1557,34 @@ void read_input_file(Sirikata::DecoderReader *str_in, std::vector<uint8_t> &inpu
 }
 
 
+// Read file contents into std::vector
+void read_file(const char *filename, std::vector<uint8_t> &buffer)
+{
+    int fd = open(filename, O_RDONLY);
+    if (fd < 0) {
+        return;
+    }
+    IOUtil::FileReader input_file(fd, 0, false);
+    read_input_file(&input_file, buffer);
+    close(fd);
+}
+
+
+// Write std::vector contents into file
+void write_file(const char *filename, const std::vector<uint8_t> &buffer)
+{
+    int fd = open(filename,
+                  O_WRONLY | O_CREAT | O_TRUNC,
+                  S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fd < 0) {
+        return;
+    }
+    IOUtil::FileWriter output_file(fd, 0, false);
+    output_file.Write(buffer.data(), buffer.size());    
+    output_file.Close();
+}
+
+
 // Implementation of ibytestream API, using the provided std::vector
 // as input data stream
 class vector_ibytestream
@@ -1865,6 +1909,27 @@ void decode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbu
     Sirikata::VectorWriter output_stream(outbuf);
 
     decode_image_stream(input_stream, output_stream);
+}
+
+
+// Encode or decode file using encode_image or decode_image function
+void process_file_using_buffer(const char *filename)
+{
+    std::vector<uint8_t> inbuf, outbuf;
+    read_file(filename, inbuf);
+
+    std::string outname;
+    Sirikata::Array1d<uint8_t, 2> fileid = {{inbuf[0], inbuf[1]}};
+    
+    if (is_jpeg_header(fileid)) {
+        encode_image(inbuf, outbuf);
+        outname = std::string(filename) + ".lep";
+    } else {
+        decode_image(inbuf, outbuf);
+        outname = std::string(filename) + ".jpg";
+    }
+
+    write_file(outname.c_str(), outbuf);
 }
 
 
