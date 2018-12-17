@@ -1551,7 +1551,7 @@ class vector_ibytestream
                                                   // prior to buffer contents
 
 public:
-    vector_ibytestream(const std::vector<uint8_t> &buffer, size_t starting_position, Sirikata::FileSize bytes_before)
+    vector_ibytestream(const std::vector<uint8_t> &buffer, size_t starting_position = 0, Sirikata::FileSize bytes_before = 0)
         : buffer_(buffer),
           position_(starting_position),
           bytes_before_(bytes_before)
@@ -1779,6 +1779,46 @@ void prepared_decode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_
 
     prepared_decode_image_stream(&input_stream, &bounded_outstream);
     bounded_outstream.flush();
+}
+
+
+// Stream-to-stream JPEG->LEP encoding
+template <class ibytestream_class>
+void encode_image_stream(ibytestream_class &input_stream, Sirikata::CountingWriter &output_stream)
+{
+    prepare_for_next_image();
+
+    const int HEADER_SIZE = 2;
+    Sirikata::Array1d<uint8_t, HEADER_SIZE> jpeg_file_header;
+    always_assert(input_stream.read(jpeg_file_header.begin(), HEADER_SIZE) == HEADER_SIZE);
+
+    filetype = JPEG;
+    NUM_THREADS = std::min(NUM_THREADS, (unsigned int)max_encode_threads);
+
+    create_coder();
+
+    std::vector<std::pair<uint32_t, uint32_t> > huff_input_offset;
+    std::vector<ThreadHandoff> luma_row_offsets;
+
+    // Read Huffman data from JPEG file into buffers
+    always_assert(read_jpeg(&huff_input_offset, &input_stream, jpeg_file_header, embedded_jpeg));
+
+    // Decode Huffman-compressed data into raw image data
+    always_assert(decode_jpeg(huff_input_offset, &luma_row_offsets));
+
+    // Compress raw data into LEPTON format and write to stream
+    always_assert(write_ujpg(&output_stream, std::move(luma_row_offsets), nullptr));
+}
+
+
+// Buffer-to-buffer JPEG->LEP encoding
+void encode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbuf) 
+{
+    // Wrap in/out buffers in stream classes suitable for encode_image_stream()
+    vector_ibytestream input_stream(inbuf);
+    Sirikata::VectorWriter output_stream(outbuf);
+
+    encode_image_stream(input_stream, output_stream);
 }
 
 
