@@ -1782,6 +1782,12 @@ void prepared_decode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_
 }
 
 
+/////////////////////////////////////////////////////////////////////////
+// Stream->stream and buffer->buffer (de)compression functions processing
+// entire JPEG/LEPTON files including header bytes
+/////////////////////////////////////////////////////////////////////////
+
+
 // Stream-to-stream JPEG->LEP encoding
 template <class ibytestream_class>
 void encode_image_stream(ibytestream_class &input_stream, Sirikata::CountingWriter &output_stream)
@@ -1819,6 +1825,46 @@ void encode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbu
     Sirikata::VectorWriter output_stream(outbuf);
 
     encode_image_stream(input_stream, output_stream);
+}
+
+
+// Stream-to-stream LEP->JPEG decoding, exactly restoring contents of original JPEG file
+void decode_image_stream(Sirikata::CountingReader &input_stream, Sirikata::DecoderWriter &output_stream)
+{
+    bounded_iostream bounded_outstream(&output_stream, &nop, Sirikata::JpegAllocator<uint8_t>());
+
+    prepare_for_next_image();
+
+    const int HEADER_SIZE = 2;
+    Sirikata::Array1d<uint8_t, HEADER_SIZE> header;
+    always_assert(IOUtil::ReadFull(&input_stream, header.begin(), HEADER_SIZE) == HEADER_SIZE);
+    filetype = (( header[0] == ujg_header[0] ) && ( header[1] == ujg_header[1] ) ) ? UJG : LEPTON;
+
+    // to do: replace all "always_assert(f(...))" with raising an exception inside f() catched by (en|de)code_image_stream()
+    always_assert(read_fixed_ujpg_header(&input_stream));
+
+    create_coder();
+
+    always_assert(read_ujpg(&input_stream, &bounded_outstream));
+
+    if (filetype != UJG && !g_progressive_image) {
+        always_assert(recode_baseline_jpeg_wrapper(&input_stream, &bounded_outstream));
+    } else {
+        always_assert(recode_jpeg(&input_stream, &bounded_outstream));
+    }
+
+    bounded_outstream.flush();
+}
+
+
+// Buffer-to-buffer LEP->JPEG decoding
+void decode_image(const std::vector<uint8_t> &inbuf, std::vector<uint8_t> &outbuf) 
+{
+    // Create streams reading data from inbuf and writing output to outbuf
+    Sirikata::VectorReader input_stream(inbuf);
+    Sirikata::VectorWriter output_stream(outbuf);
+
+    decode_image_stream(input_stream, output_stream);
 }
 
 
